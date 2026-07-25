@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
-import { buildParallax, PARALLAX_SPEEDS, scatterMenuDecor, type ParallaxLayers } from '@/game/systems/Parallax';
+import { buildParallax, scatterMenuDecor, type ParallaxLayers } from '@/game/systems/Parallax';
 import { gameState, CORGIS } from '@/game/systems/GameState';
 import { PolishedButton, CircleIconButton } from '@/game/ui/PolishedButton';
 import { drawTrophyPanel, drawTreatsPill } from '@/game/ui/PolishedHUD';
@@ -27,6 +27,15 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.layers = buildParallax(this);
+    // Menu is a static illustrated title screen — force all tile layers to a
+    // known starting position and never advance them in update().
+    this.layers.cloudsFar.tilePositionX = 0;
+    this.layers.clouds.tilePositionX = 0;
+    this.layers.mountains.tilePositionX = 0;
+    this.layers.hills.tilePositionX = 0;
+    this.layers.grass.tilePositionX = 0;
+    this.layers.path.tilePositionX = 0;
+    this.layers.foreground.tilePositionX = 0;
     scatterMenuDecor(this, this.layers.groundTop);
     this.cameras.main.fadeIn(260, 63, 167, 255);
 
@@ -51,16 +60,13 @@ export class MenuScene extends Phaser.Scene {
       ease: 'Linear',
     });
 
-    // ---- Logo ----
+    // ---- Logo (frozen — no scale/angle pulse) ----
     if (this.textures.exists('logo_corgi_hop')) {
       const logo = this.add.image(GAME_WIDTH / 2, 300, 'logo_corgi_hop').setDepth(40);
-      // Scale so logo width is 78% of screen but preserve aspect ratio.
       const targetW = GAME_WIDTH * 0.78;
       logo.setScale(targetW / logo.width);
-      this.tweens.add({ targets: logo, scale: logo.scale * 1.04, angle: -1, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       logo.setData('testId', 'menu-logo');
     } else {
-      // Fallback big text logo
       const t = this.add.text(GAME_WIDTH / 2, 280, 'CORGI\nHOP', {
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: '130px',
@@ -129,25 +135,47 @@ export class MenuScene extends Phaser.Scene {
       fontSize: '20px', fontStyle: '800', color: '#ffffff',
     }).setOrigin(0.5).setDepth(31);
 
-    // "TAP" hint under buttons
-    const hint = this.add.text(GAME_WIDTH / 2, 920, 'Tap PLAY to start hopping!', {
+    // "TAP" hint under buttons (frozen — no alpha pulse per freeze rules)
+    this.add.text(GAME_WIDTH / 2, 920, 'Tap PLAY to start hopping!', {
       fontFamily: 'system-ui, -apple-system, sans-serif',
       fontSize: '22px', fontStyle: '800', color: '#ffffff',
       stroke: '#24304a', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({ targets: hint, alpha: { from: 1, to: 0.65 }, duration: 900, yoyo: true, repeat: -1 });
+
+    // ---- Rain overlay ----
+    // The only motion allowed alongside the dog is a light rain particle
+    // effect that falls across the whole scene.
+    this.buildRain();
   }
 
-  update(_time: number, delta: number): void {
-    const dt = delta / 1000;
-    this.layers.cloudsFar.tilePositionX += PARALLAX_SPEEDS.cloudsFar * dt;
-    this.layers.clouds.tilePositionX     += PARALLAX_SPEEDS.clouds * dt;
-    this.layers.mountains.tilePositionX  += PARALLAX_SPEEDS.mountains * dt * 0.5;
-    this.layers.hills.tilePositionX      += PARALLAX_SPEEDS.hills * dt * 0.4;
-    this.layers.grass.tilePositionX      += PARALLAX_SPEEDS.grass * dt * 0.35;
-    this.layers.path.tilePositionX       += PARALLAX_SPEEDS.path * dt * 0.35;
-    this.layers.foreground.tilePositionX += PARALLAX_SPEEDS.foreground * dt * 0.35;
+  /** Rain particle emitter — vertical thin white streaks falling top → bottom. */
+  private buildRain(): void {
+    const key = 'menu_rain_drop';
+    if (!this.textures.exists(key)) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false);
+      g.fillStyle(0xffffff, 1);
+      g.fillRoundedRect(0, 0, 4, 22, 2);
+      g.generateTexture(key, 4, 22);
+      g.destroy();
+    }
+    this.add.particles(0, -40, key, {
+      x: { min: -20, max: GAME_WIDTH + 20 },
+      y: -40,
+      lifespan: 1500,
+      speedY: { min: 900, max: 1200 },
+      speedX: { min: -20, max: 20 },
+      angle: 100,
+      alpha: { start: 0.35, end: 0 },
+      scaleX: { min: 0.4, max: 0.8 },
+      scaleY: { min: 0.7, max: 1.3 },
+      frequency: 40,
+      quantity: 2,
+      blendMode: Phaser.BlendModes.NORMAL,
+    }).setDepth(45);
   }
+
+  // NOTE: no `update()` on MenuScene — the title is a static illustrated
+  // scene. Only GameScene runs the parallax tick.
 
   private gotoGame(): void {
     this.cameras.main.fadeOut(200, 63, 167, 255);
