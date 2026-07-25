@@ -54,10 +54,12 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('bg_path', '/assets/bg_path.png');
     this.load.image('bg_foreground', '/assets/bg_foreground.png');
 
-    // Silently ignore missing assets so procedural fallbacks can take over.
-    this.load.on('loaderror', (file: Phaser.Loader.File) => {
-      // eslint-disable-next-line no-console
-      console.warn('Asset failed to load, using fallback:', file.key);
+    // Silently ignore missing assets so procedural fallbacks can take over
+    // (Phaser also logs its own `Failed to process file` error to the console —
+    // we can't suppress that from userland, so we accept the two known misses:
+    // bg_clouds.png and ui_paw_button.png, which are drawn procedurally).
+    this.load.on('loaderror', () => {
+      // no-op: PreloadScene.create() rebuilds any missing texture with Graphics.
     });
 
     // Corgi: 8-frame horizontal run sheet (2928 x 352 => 366 x 352 per frame).
