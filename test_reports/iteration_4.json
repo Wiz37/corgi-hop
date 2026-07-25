@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 4 targeted verification of the freshly-regenerated rock.png and flower_yellow.png PNG assets. Both assets are visually clean: rock.png is a plain grey cel-shaded pebble with a single glossy upper-left highlight and NO cartoon face (no eyes, no pupils, no mouth); flower_yellow.png shows 3 yellow daisies with solid orange centers, green stems and leaves, and NO baked-in faces on the flower centers. When rendered in the live Phaser/WebGL scene, both assets appear crisp with no visible checkerboard or dashed-noise artifacts in their transparent backgrounds. Menu freeze from iteration 3 is preserved: pixel-diff between two menu screenshots taken 2.5s apart shows only 0.5% of pixels changed, and the diff mask is exclusively (a) thin diagonal rain streaks scattered across the whole scene, and (b) the walking corgi silhouette near the ground line; all parallax layers, the CORGI HOP logo, the 'Tap PLAY to start hopping!' hint, trees, bushes, rocks and flowers are pixel-identical. Rain particles are clearly visible as falling white streaks over the menu. PLAY regression works: tapping the PLAY button opens GameScene, HUDScene mounts (score '0', BEST:0 trophy, bone counter, pause button, TAP TO JUMP paw prompt), and gameplay parallax scrolls in real-time (clouds shift, a fence obstacle spawns and scrolls in, a collectible bone spawns). SHOP button regression also confirmed (an early errant tap opened the ShopScene with Remove Ads / Starter Pack / Premium Corgi / All Corgis / FREE +25 TREATS + WATCH + RESTORE + BACK all rendering correctly). No JS console errors were observed on any screen; only the permissible Chromium GL_CLOSE_PATH_NV WebGL driver performance warnings appeared. The ?/P/menu-corgis-button taps in this run did not visibly trigger scene changes at the coordinates I tried, but these were verified working in iteration 3 and no source changed for them; likely a tap-coordinate miss rather than a regression.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "asset_verification": {
+    "rock.png": "PASS - plain grey pebble with glossy highlight, no face, no eyes, no mouth. Faint alpha=0 residual RGB noise exists in the transparent background but is completely invisible in the live WebGL rendering (confirmed via in-game screenshot).",
+    "flower_yellow.png": "PASS - 3 clean cartoon yellow daisies with solid orange centers, green stems and leaves. No faces on centers. No visible dashed lines / scratches / noise around the flowers in the live rendering."
+  },
+  "menu_frozen_analysis": {
+    "diff_pixels_>_60": 1671,
+    "diff_percent": "0.508%",
+    "diff_location": "Only rain streaks (scattered thin vertical lines) and one blob for walking corgi near ground line. Sky, clouds, mountains, hills, grass, path, foreground, trees, bushes, rocks, flowers, logo, hint text, buttons all pixel-identical between the two 2.5s-apart screenshots.",
+    "verdict": "FROZEN - matches iteration 3 approved behavior"
+  },
+  "regression": {
+    "menu-play-button": "PASS - opens GameScene, HUDScene mounts, corgi runs, parallax scrolls, fence + bone spawn",
+    "menu-shop-button": "PASS - opens ShopScene with all 4 IAP tiles + Watch Ad tile + RESTORE/BACK",
+    "menu-corgis-button": "NOT_VERIFIED_THIS_RUN - taps missed hit zone (coordinate issue); verified working in iteration 3",
+    "?_howtoplay_icon": "NOT_VERIFIED_THIS_RUN - taps missed hit zone; verified working in iteration 3",
+    "P_privacy_icon": "NOT_VERIFIED_THIS_RUN - taps missed hit zone; verified working in iteration 3",
+    "console_errors": "NONE - only permissible WebGL GL_CLOSE_PATH_NV performance warnings"
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_4.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The regenerated PNGs contain non-zero RGB values in alpha=0 pixels (visible in Chrome DevTools transparency-preview checkerboard view). This is cosmetically fine because Phaser/WebGL correctly ignores alpha=0 pixels during rendering, but any future tool that reads raw RGB (e.g., custom shader without proper premultiply) would surface the artifacts. Consider running an extra `Image.paste(bg=(0,0,0,0))` mask pass in scripts/regen_clean_props.py to zero out RGB where alpha==0."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only test)", "frontend": "100% for iteration 4 acceptance criteria (assets + menu freeze + rain + corgi walk + PLAY regression)"},
+  "seed_data_creation": "None required",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Menu logical coordinate system: Phaser game internal is 720x1280, rendered into a 390x693 CSS canvas positioned at page (0, 113). To hit PLAY button use page coordinates (195, ~400-440); tapping (195, 490+) tends to fall on the CORGIS/SHOP row. SHOP button center is roughly page (263, 555). The HowToPlay `?` and Privacy `P` icons are stacked in the top-right around page x=350; try y=210 for ? and y=260 for P. All click hits go through Phaser's input system via mousedown+up so page.mouse.click works. Backend/API tests were not requested.",
+  "rca_of_issue": "N/A - iteration 4 was a verification-only pass on regenerated assets; no defects found."
+}
