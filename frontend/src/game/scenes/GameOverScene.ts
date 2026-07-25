@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState } from '@/game/systems/GameState';
 import { services } from '@/services';
+import { PolishedButton } from '@/game/ui/PolishedButton';
 
 export interface GameOverInit {
   score: number;
@@ -15,13 +16,12 @@ export interface GameOverInit {
 }
 
 /**
- * GameOverScene — polished Phaser-rendered panel with final score, best-score,
- * treats-this-run, and optional rewarded-ad offers (Revive, 2x Treats).
- * All ads are non-blocking: a failed ad continues the game immediately.
+ * GameOverScene — polished Phaser-rendered panel with big score, NEW BEST
+ * badge, treats-this-run, revive + 2x treats rewarded offers, restart + menu.
+ * All buttons drawn via PolishedButton for a consistent premium look.
  */
 export class GameOverScene extends Phaser.Scene {
   private args!: GameOverInit;
-  private newBestBadge?: Phaser.GameObjects.Text;
 
   constructor() { super('GameOverScene'); }
 
@@ -30,23 +30,33 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Count the run + maybe show interstitial (never before restart/menu buttons).
     gameState.incrementRunsCompleted();
     const isBest = gameState.updateBestIfHigher(this.args.score);
 
+    // Dim + panel
     const dim = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55).setDepth(0);
     dim.setInteractive();
 
-    const panel = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'ui_panel').setDisplaySize(620, 820).setDepth(1);
+    const w = 620, h = 800;
+    const px = GAME_WIDTH / 2 - w / 2, py = GAME_HEIGHT / 2 - h / 2;
+    const g = this.add.graphics().setDepth(1);
+    g.fillStyle(0x18223a, 0.55);
+    g.fillRoundedRect(px + 4, py + 8, w, h, 40);
+    g.fillStyle(0xfff8ea, 1);
+    g.fillRoundedRect(px, py, w, h, 40);
+    g.lineStyle(6, 0x24304a, 1);
+    g.strokeRoundedRect(px, py, w, h, 40);
 
+    // Title
     const title = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 320, isBest ? 'NEW BEST!' : 'GAME OVER', {
-      fontFamily: 'system-ui', fontSize: isBest ? 74 : 64, fontStyle: '900',
-      color: isBest ? '#ffd23c' : '#24304a', stroke: '#ffffff', strokeThickness: 10,
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: isBest ? 78 : 66, fontStyle: '900',
+      color: isBest ? '#ffb02f' : '#24304a',
+      stroke: '#ffffff', strokeThickness: 10,
     }).setOrigin(0.5).setDepth(2);
     title.setData('testId', 'gameover-title');
     if (isBest) {
       this.tweens.add({ targets: title, scale: { from: 0.7, to: 1 }, duration: 320, ease: 'Back.Out' });
-      this.newBestBadge = title;
       // Celebration particles
       const tex = this.makeConfettiTexture();
       this.add.particles(GAME_WIDTH / 2, 200, tex, {
@@ -56,81 +66,81 @@ export class GameOverScene extends Phaser.Scene {
         lifespan: 1600,
         quantity: 3,
         frequency: 40,
-        tint: [0xffd23c, 0xff7a1a, 0x4bb04b, 0x3fa7ff],
+        tint: [0xffb02f, 0xff7a1a, 0x4bb04b, 0x3fa7ff, 0xffd23c],
         scale: { start: 0.6, end: 0.05 },
       }).setDepth(3);
     }
 
-    // Score + best
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 200, 'SCORE', { fontFamily: 'system-ui', fontSize: '28px', fontStyle: '800', color: '#6a7280' }).setOrigin(0.5).setDepth(2);
+    // Score display
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 210, 'SCORE', {
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '26px', fontStyle: '800', color: '#6a7280',
+    }).setOrigin(0.5).setDepth(2);
     this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, `${this.args.score}`, {
-      fontFamily: 'system-ui', fontSize: '84px', fontStyle: '900',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '96px', fontStyle: '900',
       color: '#24304a', stroke: '#ffffff', strokeThickness: 10,
     }).setOrigin(0.5).setDepth(2).setData('testId', 'gameover-score');
 
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `BEST: ${gameState.bestScore}    TREATS: +${this.args.treatsThisRun}`, {
-      fontFamily: 'system-ui', fontSize: '22px', fontStyle: '800',
-      color: '#3a7fd8',
+    // Best + treats badges
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 55, `BEST: ${gameState.bestScore}      TREATS: +${this.args.treatsThisRun}`, {
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '22px', fontStyle: '800', color: '#3a7fd8',
     }).setOrigin(0.5).setDepth(2).setData('testId', 'gameover-best-treats');
 
-    // Rewarded: Revive (only offered once per run and only if reward layer available)
+    // Rewarded: Revive
     if (!this.args.reviveUsed && services.ads.isRewardedAvailable()) {
-      this.mkBtn(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30, 'REVIVE (Watch Ad)', 'ui_button_gold', 'gameover-revive', async () => {
-        const ok = await services.ads.showRewarded('revive');
-        if (ok) {
-          this.args.onRevive();
-          this.scene.stop();
-        }
+      new PolishedButton(this, {
+        x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 40, w: 460, h: 100,
+        label: 'REVIVE (Ad)', color: 0xffb02f, shadowColor: 0xb26810,
+        testId: 'gameover-revive',
+        onTap: async () => {
+          const ok = await services.ads.showRewarded('revive');
+          if (ok) { this.args.onRevive(); this.scene.stop(); }
+        },
       });
     }
 
-    // Rewarded: Double treats (once per run)
-    const doubledText = this.args.doubleTreatsClaimed ? '2x TREATS ✓' : `2x TREATS (Watch Ad)`;
-    const doubleBtn = this.mkBtn(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 160, doubledText, 'ui_button_blue', 'gameover-double-treats', async () => {
-      if (this.args.doubleTreatsClaimed) return;
-      const ok = await services.ads.showRewarded('double_treats');
-      if (ok) {
-        this.args.doubleTreatsClaimed = true;
-        this.args.onDoubleTreats();
-        (doubleBtn.list[1] as Phaser.GameObjects.Text).setText('2x TREATS ✓');
-      }
+    // Rewarded: Double treats
+    const doubledLabel = this.args.doubleTreatsClaimed ? '2x TREATS ✓' : '2x TREATS (Ad)';
+    const doubleBtn = new PolishedButton(this, {
+      x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 160, w: 460, h: 100,
+      label: doubledLabel, color: 0x4bb8ff, shadowColor: 0x1f6ea0,
+      testId: 'gameover-double-treats',
+      onTap: async () => {
+        if (this.args.doubleTreatsClaimed) return;
+        const ok = await services.ads.showRewarded('double_treats');
+        if (ok) {
+          this.args.doubleTreatsClaimed = true;
+          this.args.onDoubleTreats();
+          (doubleBtn.list[1] as unknown as Phaser.GameObjects.Text)?.setText?.('2x TREATS ✓');
+        }
+      },
     });
 
-    // Restart + Menu
-    this.mkBtn(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 280, 'RESTART', 'ui_button', 'gameover-restart', async () => {
-      // Show interstitial on natural transition (rules enforced in AdService).
-      await services.ads.maybeShowInterstitial();
-      this.args.onRestart();
+    // Restart / Menu
+    new PolishedButton(this, {
+      x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 280, w: 460, h: 100,
+      label: 'RESTART', color: 0x4bb04b, shadowColor: 0x1e6b1e,
+      testId: 'gameover-restart',
+      onTap: async () => { await services.ads.maybeShowInterstitial(); this.args.onRestart(); },
     });
-    this.mkBtn(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 380, 'MAIN MENU', 'ui_button_blue', 'gameover-menu', async () => {
-      await services.ads.maybeShowInterstitial();
-      this.args.onMenu();
+    new PolishedButton(this, {
+      x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 380, w: 460, h: 100,
+      label: 'MAIN MENU', color: 0x2a3d67, shadowColor: 0x18223a,
+      testId: 'gameover-menu',
+      onTap: async () => { await services.ads.maybeShowInterstitial(); this.args.onMenu(); },
     });
   }
 
   private makeConfettiTexture(): string {
     const key = 'confetti_particle';
     if (this.textures.exists(key)) return key;
-    const g = this.add.graphics({ x: -100, y: -100 });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0xffffff, 1);
     g.fillRect(0, 0, 12, 24);
     g.generateTexture(key, 12, 24);
     g.destroy();
     return key;
-  }
-
-  private mkBtn(x: number, y: number, label: string, tex: string, testId: string, onTap: () => void) {
-    const c = this.add.container(x, y).setDepth(3);
-    const img = this.add.image(0, 0, tex).setDisplaySize(460, 100);
-    const t = this.add.text(0, 0, label, {
-      fontFamily: 'system-ui', fontSize: '30px', fontStyle: '900',
-      color: '#ffffff', stroke: '#24304a', strokeThickness: 6,
-    }).setOrigin(0.5);
-    c.add([img, t]);
-    c.setSize(460, 100).setInteractive(new Phaser.Geom.Rectangle(-230, -50, 460, 100), Phaser.Geom.Rectangle.Contains);
-    c.setData('testId', testId);
-    c.on('pointerdown', () => this.tweens.add({ targets: c, scale: 0.94, duration: 60, yoyo: true }));
-    c.on('pointerup', onTap);
-    return c;
   }
 }

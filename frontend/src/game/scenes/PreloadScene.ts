@@ -62,6 +62,17 @@ export class PreloadScene extends Phaser.Scene {
       // no-op: PreloadScene.create() rebuilds any missing texture with Graphics.
     });
 
+    // Decoration sprites for the menu / gameplay foreground
+    this.load.image('tree_left', '/assets/tree_left.png');
+    this.load.image('tree_right', '/assets/tree_right.png');
+    this.load.image('bush', '/assets/bush.png');
+    this.load.image('flower_yellow', '/assets/flower_yellow.png');
+    this.load.image('rock', '/assets/rock.png');
+    this.load.image('trophy', '/assets/trophy.png');
+
+    // Game logo (used on the menu title screen)
+    this.load.image('logo_corgi_hop', '/assets/logo_corgi_hop.png');
+
     // Corgi: 8-frame horizontal run sheet (2928 x 352 => 366 x 352 per frame).
     this.load.spritesheet('corgi_run', '/assets/corgi_run_sheet.png', {
       frameWidth: 366,
@@ -73,9 +84,12 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('corgi_hit', '/assets/corgi_hit.png');
     this.load.image('corgi_idle', '/assets/corgi_idle.png');
 
-    // Cosmetic corgis (some intentionally missing textures fall back to idle+tint)
+    // Cosmetic corgis
     this.load.image('corgi_cowboy', '/assets/corgi_cowboy.png');
     this.load.image('corgi_pirate', '/assets/corgi_pirate.png');
+    this.load.image('corgi_superhero', '/assets/corgi_superhero.png');
+    this.load.image('corgi_astronaut', '/assets/corgi_astronaut.png');
+    this.load.image('corgi_starter', '/assets/corgi_starter.png');
 
     // Obstacles
     this.load.image('fence', '/assets/fence.png');

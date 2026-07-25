@@ -26,6 +26,9 @@ TRANSPARENT_FILES = [
     "corgi_idle.png",
     "corgi_cowboy.png",
     "corgi_pirate.png",
+    "corgi_superhero.png",
+    "corgi_astronaut.png",
+    "corgi_starter.png",
     "bg_clouds.png",
     "bg_mountains.png",
     "bg_hills.png",
@@ -41,6 +44,13 @@ TRANSPARENT_FILES = [
     "ui_button_gold.png",
     "ui_trophy_panel.png",
     "treat.png",
+    "logo_corgi_hop.png",
+    "tree_left.png",
+    "tree_right.png",
+    "bush.png",
+    "flower_yellow.png",
+    "rock.png",
+    "trophy.png",
 ]
 
 # Files that should be trimmed to their non-transparent bounding box AFTER
@@ -62,6 +72,16 @@ TRIM_FILES = {
     "corgi_idle.png",
     "corgi_cowboy.png",
     "corgi_pirate.png",
+    "corgi_superhero.png",
+    "corgi_astronaut.png",
+    "corgi_starter.png",
+    "logo_corgi_hop.png",
+    "tree_left.png",
+    "tree_right.png",
+    "bush.png",
+    "flower_yellow.png",
+    "rock.png",
+    "trophy.png",
 }
 
 

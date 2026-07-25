@@ -17,6 +17,7 @@ export class GameScene extends Phaser.Scene {
   private obstacles!: Phaser.GameObjects.Group;
   private treats!: Phaser.GameObjects.Group;
   private dust!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private decor: Phaser.GameObjects.Image[] = [];
 
   private gameSpeed = 340;                // px/s, current world scroll speed
   private targetSpeed = 340;              // eased target
@@ -43,6 +44,9 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   create(): void {
+    // Reset per-run state (decor is rebuilt in create, but keep the array
+    // reference clean between restarts).
+    this.decor = [];
     this.running = true;
     this.ended = false;
     this.gameSpeed = 340;
@@ -61,13 +65,17 @@ export class GameScene extends Phaser.Scene {
     // Physics world bounds (leave floor open — we handle ground manually).
     this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+    // Scatter some static foreground decor to give the scene depth
+    // (bushes/rocks/flowers on the horizon line — they scroll manually).
+    this.addStaticDecor();
+
     // Corgi
     const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
     const runTex = this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle';
     this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY - 20, runTex, 0);
     this.corgi.setDepth(12);
     this.corgi.setOrigin(0.5, 1);
-    this.corgi.setDisplaySize(180, 170);
+    this.corgi.setDisplaySize(190, 180);
     if (cd.tint) this.corgi.setTint(cd.tint);
     if (this.anims.exists('run')) this.corgi.play('run');
     // Collision box in physics body units — since arcade physics bodies are
@@ -135,7 +143,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists(key)) return;
     this.corgi.setTexture(key, frame);
     // Keep display size constant regardless of the source texture's native size.
-    this.corgi.setDisplaySize(180, 170);
+    this.corgi.setDisplaySize(190, 180);
   }
 
   public tryJump = (): void => {
@@ -177,6 +185,11 @@ export class GameScene extends Phaser.Scene {
 
     // Move obstacles + treats
     const dx = this.gameSpeed * dt;
+    // Scroll static decor
+    for (const d of this.decor) {
+      d.x -= (d as any).__scroll * dt * (this.gameSpeed / 340);
+      if (d.x < -200) d.x += 8 * 480; // wrap around
+    }
     this.obstacles.getChildren().forEach((o) => {
       const s = o as Phaser.GameObjects.Sprite & { hasBeenPassed?: boolean };
       s.x -= dx;
@@ -426,6 +439,31 @@ export class GameScene extends Phaser.Scene {
   private flashShieldEffect(): void {
     const c = this.add.circle(this.corgi.x, this.corgi.y - 80, 90, 0xffffff, 0.4).setDepth(14);
     this.tweens.add({ targets: c, scale: 1.6, alpha: 0, duration: 500, onComplete: () => c.destroy() });
+  }
+
+  /** Sprinkle scrolling background decor (bushes on horizon, distant trees). */
+  private addStaticDecor(): void {
+    // We spawn a handful of "background" bushes / trees that scroll left with
+    // the world at the same rate as the hills. They're depth 4.5 so they sit
+    // between the hills and the grass.
+    const items: Array<{ key: string; y: number; scale: number }> = [
+      { key: 'bush',        y: this.groundY - 90, scale: 0.28 },
+      { key: 'bush',        y: this.groundY - 85, scale: 0.22 },
+      { key: 'tree_right',  y: this.groundY - 30, scale: 0.35 },
+      { key: 'tree_left',   y: this.groundY - 30, scale: 0.32 },
+      { key: 'rock',        y: this.groundY + 40, scale: 0.24 },
+    ];
+    const spacing = 480;
+    for (let i = 0; i < 8; i++) {
+      const spec = items[i % items.length];
+      if (!this.textures.exists(spec.key)) continue;
+      const x = 200 + i * spacing + Phaser.Math.Between(-60, 60);
+      const img = this.add.image(x, spec.y, spec.key)
+        .setOrigin(0.5, 1).setDepth(4.5).setScale(spec.scale).setAlpha(0.9);
+      // Tag with scroll speed so we can move them each frame.
+      (img as any).__scroll = 60;   // px/s at base speed
+      this.decor.push(img);
+    }
   }
 
   public getScore(): number { return this.score; }

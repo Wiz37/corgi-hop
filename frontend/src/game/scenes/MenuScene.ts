@@ -1,12 +1,23 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
-import { buildParallax, PARALLAX_SPEEDS, type ParallaxLayers } from '@/game/systems/Parallax';
+import { buildParallax, PARALLAX_SPEEDS, scatterMenuDecor, type ParallaxLayers } from '@/game/systems/Parallax';
 import { gameState, CORGIS } from '@/game/systems/GameState';
+import { PolishedButton, CircleIconButton } from '@/game/ui/PolishedButton';
+import { drawTrophyPanel, drawTreatsPill } from '@/game/ui/PolishedHUD';
 
 /**
- * MenuScene — polished title screen. Renders the same parallax scene as the
- * game (so the transition feels seamless) plus a bouncing corgi, the game
- * logo, and Phaser-rendered buttons (Play, Corgis, Shop, How To Play, Privacy).
+ * MenuScene — polished illustrated countryside title screen.
+ *
+ * Composition:
+ *   - Full parallax scene (sky → clouds → mountains → hills → grass → path → foliage)
+ *   - Trees anchored to both sides of the ground, bushes + rocks + flowers
+ *     scattered along the horizon
+ *   - Big animated CORGI HOP logo (real texture) centred at the top
+ *   - Focal PLAY button (extra large, gold, with paw icon)
+ *   - Two secondary buttons (CORGIS, SHOP)
+ *   - Small circular icon buttons for HOW-TO-PLAY and PRIVACY in the top-right
+ *   - Trophy pill + treats pill along the top
+ *   - Running corgi that crosses the scene from left to right and loops
  */
 export class MenuScene extends Phaser.Scene {
   private layers!: ParallaxLayers;
@@ -16,127 +27,130 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.layers = buildParallax(this);
-    this.cameras.main.fadeIn(240, 63, 167, 255);
+    scatterMenuDecor(this, this.layers.groundTop);
+    this.cameras.main.fadeIn(260, 63, 167, 255);
 
-    // Bouncing corgi (placed on the left of the menu, running toward buttons)
-    const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-    const tex = this.textures.exists(cd.texture) ? cd.texture : 'corgi_idle';
-    this.corgi = this.add.sprite(160, this.layers.groundTop - 50, tex);
+    // ---- Running corgi that walks across the scene ----
+    const runTex = this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle';
+    this.corgi = this.add.sprite(-120, this.layers.groundTop - 40, runTex, 0);
     this.corgi.setDepth(15);
-    this.corgi.setDisplaySize(180, 170);
-    if (cd.tint) this.corgi.setTint(cd.tint);
-    if (this.anims.exists('run') && tex === 'corgi_idle') {
-      // Fresh corgi menu — animate the run sheet even though we picked idle
-      this.corgi.setTexture('corgi_run', 0);
-      this.corgi.setDisplaySize(180, 170);
-      this.corgi.play('run');
+    this.corgi.setDisplaySize(200, 190);
+    if (this.anims.exists('run')) this.corgi.play('run');
+    // Ground shadow follows the corgi
+    const shadow = this.add.ellipse(this.corgi.x, this.layers.groundTop - 4, 140, 26, 0x000000, 0.22).setDepth(14);
+    // Corgi bounce
+    this.tweens.add({ targets: this.corgi, y: this.layers.groundTop - 70, duration: 380, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    // Corgi walks across screen and restarts
+    this.tweens.add({
+      targets: this.corgi,
+      x: GAME_WIDTH + 140,
+      duration: 9500,
+      repeat: -1,
+      onRepeat: () => { this.corgi.x = -120; },
+      onUpdate: () => { shadow.x = this.corgi.x; },
+      ease: 'Linear',
+    });
+
+    // ---- Logo ----
+    if (this.textures.exists('logo_corgi_hop')) {
+      const logo = this.add.image(GAME_WIDTH / 2, 300, 'logo_corgi_hop').setDepth(40);
+      // Scale so logo width is 78% of screen but preserve aspect ratio.
+      const targetW = GAME_WIDTH * 0.78;
+      logo.setScale(targetW / logo.width);
+      this.tweens.add({ targets: logo, scale: logo.scale * 1.04, angle: -1, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      logo.setData('testId', 'menu-logo');
+    } else {
+      // Fallback big text logo
+      const t = this.add.text(GAME_WIDTH / 2, 280, 'CORGI\nHOP', {
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontSize: '130px',
+        fontStyle: '900',
+        color: '#ff8a1a',
+        stroke: '#ffffff',
+        strokeThickness: 16,
+        align: 'center',
+        shadow: { color: '#24304a', fill: true, blur: 4, offsetX: 0, offsetY: 8 },
+      }).setOrigin(0.5).setDepth(40);
+      this.tweens.add({ targets: t, scale: 1.03, angle: -1, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
-    this.tweens.add({ targets: this.corgi, y: this.layers.groundTop - 90, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    // Title logo (Phaser text — no HTML/emoji)
-    const title = this.add.text(GAME_WIDTH / 2, 220, 'CORGI HOP', {
+    // ---- Top-left trophy + top-right treats ----
+    drawTrophyPanel(this, 24, 32, gameState.bestScore);
+    drawTreatsPill(this, GAME_WIDTH - 24, 32, gameState.treats, 'top-right');
+
+    // ---- Top-right corner icon buttons (privacy, how-to-play) ----
+    new CircleIconButton(this, {
+      x: GAME_WIDTH - 70, y: 156, size: 76, label: '?',
+      testId: 'menu-howto-button',
+      onTap: () => this.scene.start('HowToPlayScene'),
+    });
+    new CircleIconButton(this, {
+      x: GAME_WIDTH - 70, y: 244, size: 76, label: 'P',
+      color: 0xffedb5,
+      testId: 'menu-privacy-button',
+      onTap: () => this.scene.start('PrivacyScene'),
+    });
+
+    // ---- Big focal PLAY button ----
+    new PolishedButton(this, {
+      x: GAME_WIDTH / 2, y: 640, w: 460, h: 140,
+      label: 'PLAY',
+      color: 0xffb02f, shadowColor: 0xb26810,
+      testId: 'menu-play-button',
+      iconTexture: 'ui_paw_button', iconScale: 0.85,
+      onTap: () => this.gotoGame(),
+    });
+
+    // Two smaller secondary buttons (side by side)
+    new PolishedButton(this, {
+      x: GAME_WIDTH / 2 - 130, y: 800, w: 260, h: 96,
+      label: 'CORGIS', color: 0x4bb8ff, shadowColor: 0x1f6ea0,
+      testId: 'menu-corgis-button',
+      onTap: () => this.scene.start('CorgiSelectScene'),
+    });
+    new PolishedButton(this, {
+      x: GAME_WIDTH / 2 + 130, y: 800, w: 260, h: 96,
+      label: 'SHOP', color: 0x4bb04b, shadowColor: 0x1e6b1e,
+      testId: 'menu-shop-button',
+      onTap: () => this.scene.start('ShopScene'),
+    });
+
+    // Selected corgi indicator (small pill above the play button)
+    const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+    const label = `Playing as: ${cd.name}`;
+    const w = 320, h = 44, x = GAME_WIDTH / 2, y = 540;
+    const g = this.add.graphics().setDepth(30);
+    g.fillStyle(0x24304a, 0.75);
+    g.fillRoundedRect(x - w / 2, y - h / 2, w, h, h / 2);
+    g.lineStyle(3, 0xffffff, 0.85);
+    g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, h / 2);
+    this.add.text(x, y, label, {
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '120px',
-      fontStyle: '900',
-      color: '#ff7a1a',
-      stroke: '#ffffff',
-      strokeThickness: 16,
-      shadow: { color: '#24304a', fill: true, blur: 6, offsetX: 0, offsetY: 8 },
+      fontSize: '20px', fontStyle: '800', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(31);
+
+    // "TAP" hint under buttons
+    const hint = this.add.text(GAME_WIDTH / 2, 920, 'Tap PLAY to start hopping!', {
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '22px', fontStyle: '800', color: '#ffffff',
+      stroke: '#24304a', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(30);
-    this.tweens.add({ targets: title, scale: { from: 1, to: 1.04 }, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-    // Buttons — rendered by Phaser (spec: no HTML buttons over gameplay)
-    const cx = GAME_WIDTH / 2;
-    const buttons: Array<{ label: string; y: number; tex: string; testId: string; onTap: () => void }> = [
-      { label: 'PLAY',         y: 700,  tex: 'ui_button',       testId: 'menu-play-button',       onTap: () => this.gotoGame() },
-      { label: 'CORGIS',       y: 830,  tex: 'ui_button_blue',  testId: 'menu-corgis-button',     onTap: () => this.scene.start('CorgiSelectScene') },
-      { label: 'SHOP',         y: 960,  tex: 'ui_button_gold',  testId: 'menu-shop-button',       onTap: () => this.scene.start('ShopScene') },
-      { label: 'HOW TO PLAY',  y: 1080, tex: 'ui_button',       testId: 'menu-howto-button',      onTap: () => this.scene.start('HowToPlayScene') },
-      { label: 'PRIVACY',      y: 1180, tex: 'ui_button_blue',  testId: 'menu-privacy-button',    onTap: () => this.scene.start('PrivacyScene') },
-    ];
-    for (const b of buttons) this.makeButton(cx, b.y, b.label, b.tex, b.testId, b.onTap);
-
-    // Trophy / best score panel (top-left) — matches design-reference
-    this.buildTrophyPanel();
-
-    // Treats counter (top-right)
-    this.buildTreatsPanel();
+    this.tweens.add({ targets: hint, alpha: { from: 1, to: 0.65 }, duration: 900, yoyo: true, repeat: -1 });
   }
 
   update(_time: number, delta: number): void {
     const dt = delta / 1000;
+    this.layers.cloudsFar.tilePositionX += PARALLAX_SPEEDS.cloudsFar * dt;
     this.layers.clouds.tilePositionX     += PARALLAX_SPEEDS.clouds * dt;
-    this.layers.mountains.tilePositionX  += PARALLAX_SPEEDS.mountains * dt;
-    this.layers.hills.tilePositionX      += PARALLAX_SPEEDS.hills * dt * 0.3;
-    this.layers.grass.tilePositionX      += PARALLAX_SPEEDS.grass * dt * 0.3;
-    this.layers.path.tilePositionX       += PARALLAX_SPEEDS.path * dt * 0.3;
-    this.layers.foreground.tilePositionX += PARALLAX_SPEEDS.foreground * dt * 0.3;
-  }
-
-  private makeButton(x: number, y: number, label: string, tex: string, testId: string, onTap: () => void): Phaser.GameObjects.Container {
-    const c = this.add.container(x, y).setDepth(30);
-    const img = this.add.image(0, 0, tex).setDisplaySize(360, 110);
-    const txt = this.add.text(0, 0, label, {
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '38px',
-      fontStyle: '900',
-      color: '#ffffff',
-      stroke: '#24304a',
-      strokeThickness: 6,
-    }).setOrigin(0.5);
-    c.add([img, txt]);
-    c.setSize(360, 110);
-    c.setInteractive(new Phaser.Geom.Rectangle(-180, -55, 360, 110), Phaser.Geom.Rectangle.Contains);
-    c.setData('testId', testId);
-    c.on('pointerdown', () => {
-      this.tweens.add({ targets: c, scale: 0.94, duration: 60, yoyo: true });
-    });
-    c.on('pointerup', () => onTap());
-    return c;
-  }
-
-  private buildTrophyPanel(): void {
-    const c = this.add.container(20, 32).setDepth(40);
-    const panel = this.add.image(0, 0, 'ui_trophy_panel').setOrigin(0, 0).setDisplaySize(280, 110);
-    const label = this.add.text(120, 45, `${gameState.bestScore}`, {
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '44px',
-      fontStyle: '900',
-      color: '#ffffff',
-      stroke: '#24304a',
-      strokeThickness: 5,
-    }).setOrigin(0, 0.5);
-    const best = this.add.text(24, 92, `BEST: ${gameState.bestScore}`, {
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '20px',
-      fontStyle: '800',
-      color: '#ffd23c',
-      stroke: '#24304a',
-      strokeThickness: 4,
-    }).setOrigin(0, 0);
-    c.add([panel, label, best]);
-    c.setData('testId', 'menu-trophy-panel');
-  }
-
-  private buildTreatsPanel(): void {
-    const c = this.add.container(GAME_WIDTH - 20, 32).setDepth(40);
-    const bg = this.add.rectangle(-180, 40, 180, 60, 0x24304a, 0.7).setOrigin(0, 0.5);
-    bg.setStrokeStyle(4, 0xffffff);
-    const bone = this.add.image(-155, 40, 'treat').setDisplaySize(50, 28);
-    const t = this.add.text(-115, 40, `${gameState.treats}`, {
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '30px',
-      fontStyle: '900',
-      color: '#ffd23c',
-      stroke: '#24304a',
-      strokeThickness: 4,
-    }).setOrigin(0, 0.5);
-    c.add([bg, bone, t]);
-    c.setData('testId', 'menu-treats-panel');
+    this.layers.mountains.tilePositionX  += PARALLAX_SPEEDS.mountains * dt * 0.5;
+    this.layers.hills.tilePositionX      += PARALLAX_SPEEDS.hills * dt * 0.4;
+    this.layers.grass.tilePositionX      += PARALLAX_SPEEDS.grass * dt * 0.35;
+    this.layers.path.tilePositionX       += PARALLAX_SPEEDS.path * dt * 0.35;
+    this.layers.foreground.tilePositionX += PARALLAX_SPEEDS.foreground * dt * 0.35;
   }
 
   private gotoGame(): void {
-    this.cameras.main.fadeOut(180, 63, 167, 255);
+    this.cameras.main.fadeOut(200, 63, 167, 255);
     this.cameras.main.once('camerafadeoutcomplete', () => {
       this.scene.start('GameScene');
       this.scene.launch('HUDScene');

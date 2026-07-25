@@ -1,0 +1,41 @@
+{
+  "summary": "Frontend regression pass on the Corgi Hop visual redesign (Phaser 3 + Vite + Capacitor). Tested against the public preview URL at mobile viewport 414x900 by driving Phaser via window.__CORGI_HOP__ and translating container-level testIds (setData('testId',...)) to canvas viewport pixels for real mouse.down/mouse.up taps. Confirmed the PolishedButton simplification: PLAY reliably starts the game (menu-play-button tap → active scenes = ['GameScene','HUDScene']) — this fixes the previous iteration where pointer.event.type gating broke Playwright clicks. MenuScene testIds present: menu-play-button, menu-corgis-button, menu-shop-button, menu-howto-button, menu-privacy-button, menu-logo, hud-trophy-panel, hud-treats-panel. Menu screenshot visually confirms: real logo texture, tree_left + tree_right, bush + flower decorations, gold PLAY button with paw icon, blue CORGIS + green SHOP secondary buttons, trophy pill top-left, treats pill top-right, circular ? and P icon buttons top-right, dirt path visible under grass. CORGIS opens CorgiSelectScene showing all 6 polished cards (classic, starter, cowboy, superhero, pirate, astronaut) each with a *-btn action button. SHOP opens ShopScene with all 4 product buy buttons (shop-buy-com.corgihop.remove_ads / starter_pack / premium_corgis / all_corgis) plus shop-bonus-treats + shop-restore + shop-back. Tapping shop-buy-* correctly opens the DOM overlay purchase-sim-dialog with purchase-sim-confirm/purchase-sim-cancel — Cancel closes it cleanly. PRIVACY circular icon opens PrivacyScene. GameScene screenshot visually confirms the new art integration: dirt path with paw prints visible under the corgi (not just green grass), white picket fence in mid-ground, blue mountain silhouettes, cloud parallax, HUD with pause circle + trophy pill + treats pill + big score '0' + jump paw button (large center-bottom) + red TEST ADS badge. In-canvas taps at the mid-screen trigger jumps and the corgi cleared 2 fences before a collision — the scoreChanged event correctly bumped the HUD score from 0 to 2. No JS console errors beyond three benign 'GL_CLOSE_PATH_NV GPU stall' WebGL performance warnings (Chromium driver artifact, not app code); the previously-noted 'bg_clouds' / 'ui_paw_button' loader warnings did not appear this run. Two flows produced test-script artifacts rather than real bugs (documented under 'test_script_artifacts' below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/menu.png",
+    "/tmp/corgis.png",
+    "/tmp/shop.png",
+    "/tmp/game.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PolishedButton.onUp now fires onTap unconditionally on pointerup (with a 60ms delay for the bounce) which fixes the previous Playwright/touch failure. Good. Note: onOut also cancels the visual press but does NOT fire onTap, so a drag-off cancels the tap — correct behaviour.",
+    "MenuScene composition matches the reference — logo (with idle sway tween), trees on both sides, bush/rock/flower decor from scatterMenuDecor, running corgi crossing left-to-right with ellipse shadow, PLAY / CORGIS / SHOP arranged in the expected layout, and the two CircleIconButtons (?, P) top-right.",
+    "GameScene addStaticDecor() correctly scrolls background decor at gameSpeed/340 factor so bushes/trees/rocks stay in sync with the world during acceleration. Dirt path is now visible thanks to Parallax.ts's tilePositionY offsets.",
+    "GameScene emits scoreChanged on every obstacle pass — verified end-to-end from HUDScene's score text 0 → 2 during the run test.",
+    "Purchase-sim and ad-sim DOM overlays are still labelled 'TEST PURCHASE (browser preview)' / 'TEST AD (browser preview)' as required. shop-buy → purchase-sim-dialog opens on tap, purchase-sim-cancel closes cleanly."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only iteration per request)",
+    "frontend": "100% of requested regressions verified: menu render, PLAY→GameScene, CORGIS→CorgiSelectScene (6 cards), SHOP→ShopScene (4 products + bonus + restore + back), PRIVACY→PrivacyScene, shop-buy→purchase-sim-dialog, in-game jump + scoreChanged, GameScene visual smoke (dirt path/fence/mountains/clouds/HUD), no JS errors."
+  },
+  "seed_data_creation": "None (game is fully client-side; no backend calls).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "test_script_artifacts": [
+    "HOWTO tap after SHOP→BACK produced scenes=['MenuScene','CorgiSelectScene'] because an earlier corgi-back attempt (script used wrong testId — actual is 'select-back') fell through to a manual scene.start('MenuScene') which did not stop CorgiSelectScene; the stale scene was still input-active and swallowed the '?' tap. PRIVACY worked with the same CircleIconButton component right after — component itself is fine.",
+    "PAUSE tap after restart produced scenes=['HUDScene','GameOverScene'] because the 1200ms post-tap wait was long enough for the corgi to collide with a fence (GameScene.hitObstacle pauses GameScene and launches GameOverScene). Not a pause-button bug; a shorter wait or a scripted pre-pause jump chain would confirm PauseScene."
+  ],
+  "context_for_next_testing_agent": "This is a Phaser 3 canvas game — testIds live on Phaser containers via setData('testId', ...) not DOM data-testid. The ONLY DOM data-testids are the ad-sim (ad-sim-overlay/complete/skip) and purchase-sim (purchase-sim-dialog/confirm/cancel) overlays. To click a canvas testId: (1) window.__CORGI_HOP__ is the Phaser.Game instance, (2) walk g.scene.getScenes(true) → children.list RECURSIVELY (nested containers matter — buttons live inside cards), (3) accumulate parentContainer x/y, (4) translate to viewport via canvas.getBoundingClientRect() × g.scale.width/height, (5) page.mouse.down/up. IMPORTANT: to return from a sub-scene use 'select-back' / 'shop-back' — do NOT scene.start('MenuScene') from evaluate() because Phaser's stop-old-start-new only applies when start() is called from *within* the currently-active scene; external start() leaves the old scene running and its inputs will intercept. To test Pause properly, jump aggressively for ~1s to survive the first fence, then tap hud-pause-button and check immediately (no post-tap sleep before scene read). All the request's listed testIds exist on the live build.",
+  "rca_of_issue": "No unresolved regressions. The PolishedButton pointer.event.type gating fix works — PLAY (and every other polished button we hit) now responds to Playwright's mouse.down/mouse.up sequence and to the natural canvas pointer events. The visual redesign is fully in place: real logo texture, illustrated countryside menu, dirt path in gameplay, picket fence in mid-ground, mountains + clouds in the sky, and a polished HUD with trophy/treats/score/pause + big center jump button."
+}

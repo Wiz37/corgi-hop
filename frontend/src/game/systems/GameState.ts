@@ -22,12 +22,12 @@ export interface CorgiDef {
 }
 
 export const CORGIS: CorgiDef[] = [
-  { id: 'classic',    name: 'Classic Corgi',   texture: 'corgi_idle',    premium: false, entitlementProducts: [] },
-  { id: 'starter',    name: 'Starter Corgi',   texture: 'corgi_starter', premium: true,  entitlementProducts: ['com.corgihop.starter_pack', 'com.corgihop.all_corgis'], tint: 0x9de6d5 },
-  { id: 'cowboy',     name: 'Cowboy Corgi',    texture: 'corgi_cowboy',  premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'superhero',  name: 'Superhero Corgi', texture: 'corgi_superhero', premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'], tint: 0xff6666 },
-  { id: 'pirate',     name: 'Pirate Corgi',    texture: 'corgi_pirate',  premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'astronaut',  name: 'Astronaut Corgi', texture: 'corgi_astronaut', premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'], tint: 0xffffff },
+  { id: 'classic',    name: 'Classic Corgi',   texture: 'corgi_idle',      premium: false, entitlementProducts: [] },
+  { id: 'starter',    name: 'Starter Corgi',   texture: 'corgi_starter',   premium: true,  entitlementProducts: ['com.corgihop.starter_pack', 'com.corgihop.all_corgis'] },
+  { id: 'cowboy',     name: 'Cowboy Corgi',    texture: 'corgi_cowboy',    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'superhero',  name: 'Superhero Corgi', texture: 'corgi_superhero', premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'pirate',     name: 'Pirate Corgi',    texture: 'corgi_pirate',    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'astronaut',  name: 'Astronaut Corgi', texture: 'corgi_astronaut', premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
 ];
 
 export interface Entitlements {
