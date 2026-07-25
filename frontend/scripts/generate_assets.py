@@ -16,7 +16,12 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 load_dotenv("/app/backend/.env")
 
-API_KEY = os.getenv("EMERGENT_LLM_KEY", "sk-emergent-01fF720Da4d2d48Ec3")
+API_KEY = os.getenv("EMERGENT_LLM_KEY")
+if not API_KEY:
+    raise SystemExit(
+        "EMERGENT_LLM_KEY is not set. Populate it in /app/backend/.env before "
+        "running this script. Never commit a real key to source."
+    )
 OUT_DIR = Path("/app/frontend/public/assets")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

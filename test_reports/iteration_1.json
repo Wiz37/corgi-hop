@@ -1,0 +1,40 @@
+{
+  "summary": "Post-security-fix regression pass on Corgi Hop (Phaser 3 + Vite). All 13 backend pytest tests PASS: 5 whitelisted CORS origins each get an echoed Access-Control-Allow-Origin (with allow-credentials=true), the random evil origin https://evil.example.com receives NO ACAO header on preflight or simple request, /app/backend/.env and /app/frontend/.env are both matched by .gitignore, and generate_assets.py exits non-zero with a clear 'EMERGENT_LLM_KEY is not set' error when the env var is missing. Frontend Playwright pass on the public preview URL confirms: game boots, MenuScene renders with PLAY/CORGIS/SHOP/HOW TO PLAY/PRIVACY, PLAY starts GameScene+HUDScene with parallax scrolling and running corgi visible, CorgiSelectScene shows all 6 corgi cards (Classic, Starter, Cowboy, Superhero, Pirate, Astronaut), ShopScene shows all 4 products (Remove Ads Forever $3.99, Starter Pack $1.99, Premium Corgi Pack $2.99, All Corgis Bundle $5.99) plus the FREE +25 TREATS row and RESTORE + BACK buttons, tapping a Buy button opens the labelled TEST PURCHASE dialog with Simulate Purchase / Cancel buttons, colliding with the first fence transitions to GameOverScene, tapping REVIVE opens the labelled TEST AD overlay which offers both COMPLETE AD and Skip / No thanks, and clicking COMPLETE AD (after the 3s countdown) reloads GameScene while GameOverScene closes (reward only fires on complete). Only two console errors observed during the full flow — the expected 'Failed to process file image bg_clouds' and 'ui_paw_button' — which the game already handles via procedural fallbacks as documented in the request.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_and_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: The two expected missing-asset console errors ('bg_clouds' and 'ui_paw_button') are logged at ERROR level by Phaser's loader even though procedural fallbacks make the game visually complete — if desired, either (a) drop a small transparent PNG placeholder in /app/frontend/public/assets/ for these two keys, or (b) call this.load.on('loaderror', ...) in PreloadScene to swallow just these two keys so the console stays fully clean in production."
+  ],
+  "critical_code_review_comments": [
+    "CORS implementation in /app/backend/server.py is correctly tightened: allow_origins is a small whitelist (with CORS_ALLOWED_ORIGINS env override), allow_credentials=true is safe now that '*' is gone, and allow_methods/allow_headers are restricted to what the app needs. Preserves the classic dev/prod origins and both native Capacitor scheme (capacitor://localhost) and Android WebView (http://localhost).",
+    "generate_assets.py now correctly raises SystemExit with a clear message instead of embedding a real key — verified by subprocess test.",
+    ".gitignore in both /app and /app/frontend now blocks .env and .env.* while still allowing .env.example — verified with `git check-ignore`.",
+    "Purchase and Ad simulation DOM overlays are prominently labelled 'TEST PURCHASE (browser preview)' / 'TEST AD (browser preview)' with red badges and have proper data-testid attributes on all interactive elements.",
+    "The Phaser scene layout uses container.setData('testId', ...) which lives on the object, not the DOM — main agent may want to note in QA docs that automated tests must traverse the Phaser display list recursively (nested containers) to find nested testIds like shop-buy-* which sit inside product-card containers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_security_and_api.py (new pytest regression suite)",
+    "/app/backend/tests/__init__.py (empty, to make the dir a package)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 pytest)",
+    "frontend": "100% (6/6 flows: boot, menu-play, corgi-select, shop-list, shop-purchase-dialog, gameover-revive-ad-complete)"
+  },
+  "seed_data_creation": "One TEST_regression_corgihop status_check row is inserted by TestStatusCRUD::test_create_and_list_status; harmless.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Corgi Hop is a Phaser 3 game (NOT React Native/Expo) rendered inside a single <canvas> — interactive elements use container.setData('testId', ...) on Phaser objects, not DOM data-testid. The exceptions are the DOM overlays for the simulated ad (data-testid=ad-sim-overlay, ad-sim-complete, ad-sim-skip) and simulated purchase (data-testid=purchase-sim-dialog, purchase-sim-confirm, purchase-sim-cancel). To click canvas testIds, use window.__CORGI_HOP__ (Phaser.Game instance), walk scene.getScenes(true) -> children.list RECURSIVELY (nested containers matter, e.g. shop-buy-* sit inside product-card containers), read parentContainer chain to compute world x/y, then translate to viewport pixels via canvas.getBoundingClientRect() and game.scale.width/height, then page.mouse.click(x,y). Backend has zero gameplay coupling — CORS fix cannot break the client. To force game-over quickly for testing, just start PLAY and do not jump: the first fence hits in ~3 seconds.",
+  "rca_of_issue": "No unresolved issues. All three security fixes verified end-to-end: (1) CORS wildcard removed and whitelist honoured — evil origins get NO ACAO header (Starlette CORSMiddleware silently drops it when origin isn't in list); (2) EMERGENT_LLM_KEY fallback removed from generate_assets.py — script now raises SystemExit when the env var is missing/empty; (3) both .gitignore files match .env / .env.* with a !.env.example exception, verified with git check-ignore -v. None of the fixes regressed gameplay because the game is 100% client-side and never calls the FastAPI backend."
+}

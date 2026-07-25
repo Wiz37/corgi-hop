@@ -22,6 +22,19 @@ db = client[os.environ['DB_NAME']]
 # Create the main app without a prefix
 app = FastAPI()
 
+# CORS — restrict to the preview / production hosts. Do NOT combine
+# `allow_credentials=True` with `allow_origins=["*"]` (the browser silently
+# blocks it, and it's the classic cross-origin exposure footgun).
+_default_origins = [
+    "https://hop-mobile-game.preview.emergentagent.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "capacitor://localhost",  # iOS WebView origin
+    "http://localhost",       # Android WebView origin
+]
+_env_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+CORS_ALLOWED_ORIGINS = _env_origins or _default_origins
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
@@ -58,9 +71,9 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Configure logging
