@@ -687,11 +687,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnFence(x: number, fenceH: number): void {
-    const fenceW = 80;
-    const f = this.add.sprite(x, this.groundY, 'fence').setOrigin(0.5, 1).setDepth(10);
+    // WHITE PICKET FENCE hurdle — a single fully-opaque procedural texture
+    // ('picket_fence') scaled to the requested height. Aspect is preserved
+    // so pickets stay proportional. Bright white with a dark navy outline,
+    // guaranteed visible against sky + background fence.
+    const fenceW = 90;
+    const f = this.add.sprite(x, this.groundY, 'picket_fence')
+      .setOrigin(0.5, 1)
+      .setDepth(10)
+      .setAlpha(1);
     f.setDisplaySize(fenceW, fenceH);
     // Collision box matches the visible artwork exactly (fair collisions).
-    (f as any).hitRect = new Phaser.Geom.Rectangle(-fenceW / 2 * 0.7, -fenceH * 0.95, fenceW * 0.7, fenceH * 0.9);
+    (f as any).hitRect = new Phaser.Geom.Rectangle(-fenceW / 2 * 0.85, -fenceH * 0.95, fenceW * 0.85, fenceH * 0.9);
     this.obstacles.add(f);
   }
 

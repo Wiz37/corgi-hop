@@ -119,6 +119,10 @@ export class PreloadScene extends Phaser.Scene {
     // Procedural fallbacks for any assets that failed to generate.
     if (!this.textures.exists('bg_clouds')) this.buildFallbackClouds();
     if (!this.textures.exists('ui_paw_button')) this.buildFallbackPaw();
+    // ALWAYS rebuild the fence texture procedurally as a bright, opaque
+    // white picket slat with a dark outline — the shipped fence.png is a
+    // pale 3D bar that visually vanishes against the sky. See buildPicket().
+    this.buildPicketSlat();
 
     // Small fade to menu
     this.cameras.main.fadeOut(220, 63, 167, 255);
@@ -174,6 +178,77 @@ export class PreloadScene extends Phaser.Scene {
     ];
     for (const t of toes) g.fillEllipse(t.x, t.y, t.w, t.h);
     g.generateTexture('ui_paw_button', S, S);
+    g.destroy();
+  }
+
+  /**
+   * Procedurally draw a full OPAQUE white picket-fence hurdle at native
+   * resolution (240 × 240) and register it as 'picket_fence'. GameScene
+   * spawnFence() scales this to the required hurdle height each spawn.
+   *
+   * Design:
+   *   - 3 picket slats (pointed tops) at even spacing across the width.
+   *   - 2 horizontal cross-rails tying them together (classic garden fence).
+   *   - Bright white fill with a dark navy outline for high contrast against
+   *     the sky and background fence.
+   */
+  private buildPicketSlat(): void {
+    const W = 240, H = 240;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    const outline = 0x24304a;
+    const white = 0xffffff;
+    const shadow = 0xd8dee8;
+    const outlineW = 4;
+
+    const slatCount = 3;
+    const slatW = 50;
+    const slatSpacing = (W - slatCount * slatW) / (slatCount + 1);
+    // Rails first, so pickets render on top for authentic layered look.
+    const railY1 = Math.floor(H * 0.40);
+    const railY2 = Math.floor(H * 0.72);
+    const railH = 20;
+    // rail outlines
+    g.fillStyle(outline, 1);
+    g.fillRect(2, railY1 - 2, W - 4, railH + 4);
+    g.fillRect(2, railY2 - 2, W - 4, railH + 4);
+    g.fillStyle(white, 1);
+    g.fillRect(6, railY1 + 2, W - 12, railH - 4);
+    g.fillRect(6, railY2 + 2, W - 12, railH - 4);
+
+    for (let i = 0; i < slatCount; i++) {
+      const cx = slatSpacing + slatW / 2 + i * (slatW + slatSpacing);
+      const left = cx - slatW / 2;
+      const right = cx + slatW / 2;
+      // Outline path (pointed top pentagon)
+      g.fillStyle(outline, 1);
+      g.beginPath();
+      g.moveTo(cx, 4);
+      g.lineTo(right, 30);
+      g.lineTo(right, H - 4);
+      g.lineTo(left, H - 4);
+      g.lineTo(left, 30);
+      g.closePath();
+      g.fillPath();
+      // Inner white fill
+      g.fillStyle(white, 1);
+      g.beginPath();
+      g.moveTo(cx, 4 + outlineW);
+      g.lineTo(right - outlineW, 32);
+      g.lineTo(right - outlineW, H - 4 - outlineW);
+      g.lineTo(left + outlineW, H - 4 - outlineW);
+      g.lineTo(left + outlineW, 32);
+      g.closePath();
+      g.fillPath();
+      // Right-edge shadow band for a subtle 3D effect
+      g.fillStyle(shadow, 1);
+      g.fillRect(right - outlineW - 6, 34, 5, H - 40 - outlineW);
+    }
+    // Overwrite any old 'fence' texture too, so any code that still
+    // references 'fence' picks up the clean picket asset.
+    for (const key of ['picket_fence', 'fence']) {
+      if (this.textures.exists(key)) this.textures.remove(key);
+      g.generateTexture(key, W, H);
+    }
     g.destroy();
   }
 }
