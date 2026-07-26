@@ -37,20 +37,59 @@ GRAY_TOL = 18       # +/- around 210 to accept light-grey cell
 WHITE_TOL = 12      # +/- around 254 to accept white cell
 
 
+def detect_bg_palette(rgb: np.ndarray, band: int = 40) -> tuple[np.ndarray, np.ndarray]:
+    """Sample a small strip along the top edge of the frame and return the
+    two dominant "background" colours (checkerboard cell A and cell B). We
+    assume the top ~40 px are guaranteed to be checkerboard because the
+    corgi never reaches the very top of the canvas.
+    """
+    H, W, _ = rgb.shape
+    strip = rgb[:band, :, :].reshape(-1, 3)
+    # Very cheap dominant-colour extraction — round to nearest 4 and take the
+    # two most common rounded triplets.
+    q = (strip // 4) * 4
+    packed = q[:, 0].astype(np.int32) * 1000000 + q[:, 1].astype(np.int32) * 1000 + q[:, 2].astype(np.int32)
+    vals, counts = np.unique(packed, return_counts=True)
+    order = np.argsort(-counts)
+    top2 = vals[order[:2]]
+    def unpack(v: int) -> np.ndarray:
+        r = (v // 1000000)
+        g = (v // 1000) % 1000
+        b = v % 1000
+        return np.array([r, g, b], dtype=np.int16)
+    a, b = unpack(int(top2[0])), unpack(int(top2[1]))
+    return a, b
+
+
 def build_checker_mask(rgb: np.ndarray) -> np.ndarray:
-    """Return a bool mask where True == "looks like the checkerboard bg"."""
+    """Return a bool mask where True == "looks like the checkerboard bg".
+
+    Auto-detects the two checkerboard colours from a horizontal strip of the
+    frame's top edge so the same pipeline works for the many colour palettes
+    that Nano Banana rotates through (light-grey+white, mid-grey+lighter
+    grey, blue+lighter-blue, etc). We fall back to a "very desaturated pale"
+    rule if palette detection can't find a bimodal signal.
+    """
     r, g, b = rgb[..., 0].astype(np.int16), rgb[..., 1].astype(np.int16), rgb[..., 2].astype(np.int16)
-    # Chroma near zero (fully grey pixel)
     max_c = np.maximum(np.maximum(r, g), b)
     min_c = np.minimum(np.minimum(r, g), b)
     chroma = max_c - min_c
+
+    palette_a, palette_b = detect_bg_palette(rgb)
+
+    def close_to(color: np.ndarray, tol: int = 22) -> np.ndarray:
+        return (np.abs(r - color[0]) <= tol) \
+             & (np.abs(g - color[1]) <= tol) \
+             & (np.abs(b - color[2]) <= tol)
+
+    palette_mask = close_to(palette_a) | close_to(palette_b)
+
+    # Also keep the generic "pale + low-chroma" fallback so JPEG seam
+    # in-between-cells still get caught even if palette detection missed.
     lightness = (r + g + b) // 3
-    # Generic "unsaturated pale" pixel — catches both the light-grey and the
-    # white checkerboard cells, plus the JPEG-compression seam pixels that
-    # sit between them (values like 220, 234, 245 etc). Anything with real
-    # colour (orange, dark outline, tag yellow, collar teal) has enough
-    # chroma to escape this filter.
-    return (chroma <= 18) & (lightness >= 190) & (lightness <= 258)
+    fallback = (chroma <= 20) & (lightness >= 150) & (lightness <= 258)
+
+    return palette_mask | fallback
 
 
 def edge_flood(mask: np.ndarray) -> np.ndarray:
