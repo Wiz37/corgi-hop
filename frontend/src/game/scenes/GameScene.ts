@@ -337,6 +337,14 @@ export class GameScene extends Phaser.Scene {
       finalKey = this.textures.exists(def.texture) ? def.texture : key;
     }
     if (!this.textures.exists(finalKey)) return;
+    // PHYSICAL-JUMP FIX: only re-resize + reset the physics body when the
+    // texture actually changes. Previously setCorgiTexture was called every
+    // frame while airborne, which meant sizeCorgiUniform() (which stops
+    // any active scale tween and rewrites the body) fired every tick —
+    // preventing us from ever playing a "launch pop" tween on the jump.
+    // NOTE: frame index changes within the same spritesheet are handled by
+    // Phaser's Animation system, so we only need to gate on texture key.
+    if (this.corgi.texture && this.corgi.texture.key === finalKey) return;
     this.corgi.setTexture(finalKey, frame);
     // Uniform sizing keeps the natural aspect ratio of every pose.
     this.sizeCorgiUniform();
@@ -385,7 +393,69 @@ export class GameScene extends Phaser.Scene {
       gameState.saveTotals();
       this.setCorgiTexture('corgi_jump');
       this.corgi.anims.stop();
+      // PHYSICAL-JUMP POLISH — Emit a one-shot "launch pop" tween that
+      // squash-stretches the sprite briefly on takeoff. Purely visual: the
+      // tween runs on scaleX/scaleY around the current baseScale so the
+      // physics body is never affected. Emphasises that the corgi is
+      // physically launching itself off the ground.
+      this.playLaunchPop();
+      // Kick a small dust puff at the corgi's feet so the takeoff reads as
+      // a real physical lift-off instead of a static texture swap.
+      this.spawnJumpPuff();
     }
+  }
+
+  /**
+   * Plays a brief squash → stretch → settle tween on the corgi sprite the
+   * instant a jump is initiated. Never touches the physics body — only
+   * scaleX / scaleY. Uses baseScale so it stays proportional across all
+   * corgis (Classic + premium outfits).
+   */
+  private playLaunchPop(): void {
+    if (!this.corgi || this.baseScale <= 0) return;
+    // Kill any residual scale tween so this one always wins visually.
+    this.tweens.killTweensOf(this.corgi);
+    const b = this.baseScale;
+    // Reset then run a very short pop.
+    this.corgi.setScale(b, b);
+    this.tweens.add({
+      targets: this.corgi,
+      scaleX: b * 0.92,
+      scaleY: b * 1.14,
+      duration: 90,
+      ease: 'Quad.easeOut',
+      yoyo: true,
+      onComplete: () => {
+        // Return exactly to base so subsequent pose swaps don't drift.
+        if (this.corgi) this.corgi.setScale(this.baseScale, this.baseScale);
+      },
+    });
+  }
+
+  /**
+   * One-shot "kick puff" of dust at the corgi's paws when the jump fires.
+   * Uses the same dust texture as the running trail but bursts a batch of
+   * particles in a tight cone downward-behind, then fades out.
+   */
+  private spawnJumpPuff(): void {
+    if (!this.corgi) return;
+    const key = this.makeDustTexture();
+    const px = this.corgi.x - 20;
+    const py = this.groundY - 6;
+    const burst = this.add.particles(0, 0, key, {
+      x: px,
+      y: py,
+      speedX: { min: -220, max: -60 },
+      speedY: { min: -140, max: -40 },
+      scale: { start: 0.75, end: 0.05 },
+      alpha: { start: 0.85, end: 0 },
+      lifespan: 480,
+      quantity: 8,
+      emitting: false,
+    }).setDepth(11);
+    burst.explode(8, px, py);
+    // Auto-destroy after the burst fades so we don't leak emitters.
+    this.time.delayedCall(600, () => burst.destroy());
   }
 
   update(time: number, delta: number): void {
