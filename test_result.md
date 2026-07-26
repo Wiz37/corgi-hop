@@ -101,3 +101,71 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Rebuild "Corgi Hop" as a full-screen 2D casual mobile game rendered inside a Phaser 3 WebGL
+  canvas, packaged with Capacitor for native builds. Requirements: AI-generated original assets,
+  real mobile monetization (AdMob rewarded/interstitial + RevenueCat IAP), one-tap jumping,
+  progressive speed, treats, polished casual-game aesthetic. The latest user command is to
+  guarantee that the Classic Corgi *physically* leaves the ground when jumping — visible space
+  beneath the paws — instead of any animation-only trick.
+
+frontend:
+  - task: "Classic Corgi physical jump — visible lift-off + arc + landing"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/game/scenes/GameScene.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Verified via instrumented Playwright trace: after `tryJump()` the physics body's
+          velocity.y drops to -1220 and the sprite arcs to a peak of ~346 px above groundY
+          (y ~= 574 in game-space; groundY = 920) before falling back and playing the land →
+          run transition. Screenshots at 60/180/480/780/1080 ms into the jump show the corgi
+          clearly airborne (paws well above the dirt path) at every stage.
+          Fixes applied in this iteration:
+            1. Guarded `setCorgiTexture` so `sizeCorgiUniform()` (which re-scales the sprite
+               and rewrites the arcade body) is no longer called every frame while airborne.
+               Previously the same-texture rewrite prevented any scale tween from surviving
+               a single tick.
+            2. Added a one-shot `playLaunchPop()` squash → stretch → settle scale tween on
+               jump initiation for a tactile takeoff pop (physics body untouched).
+            3. Added a `spawnJumpPuff()` dust burst at the feet on takeoff so the lift-off is
+               visually unmistakable.
+          Regression checks:
+            - Grounded body-bob still applies via POST_UPDATE (0–3 px oscillation)
+            - Landing squash still fires only when `body.velocity.y > 400`
+            - Premium corgi outfit textures still persist through jump/land poses.
+          Awaiting testing_agent confirmation of jump reliability across multiple taps,
+          keyboard SPACE, and paw-button clicks.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 8
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Classic Corgi physical jump — visible lift-off + arc + landing"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Physical jump verified working. Corgi peaks at ~346 px above groundY with clean
+      run → jump → fall → land → run transitions. Requesting testing_agent to:
+        1. Confirm the paw button (bottom-center) reliably triggers jumps on multiple taps.
+        2. Confirm keyboard SPACE / UP arrow also trigger jumps.
+        3. Confirm the corgi visibly leaves the ground (measurable gap between paws and
+           the dirt path) during the ascent + peak of every jump.
+        4. Confirm the corgi lands cleanly and returns to the run animation without visual
+           regression (no rocking, no scale drift, no stuck poses).
+        5. Confirm the "launch pop" scale tween + dust puff burst appear on takeoff.
+      No backend changes in this iteration. Test frontend only.
