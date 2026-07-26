@@ -30,8 +30,13 @@ export interface CorgiDef {
 export const CORGIS: CorgiDef[] = [
   // Classic has its own dedicated jump/fall/land textures (corgi_jump, corgi_fall,
   // corgi_land). Its runSheetKey points at the approved 8-frame sheet.
+  // FACING FIX: The dedicated pose PNGs (corgi_fall, corgi_land) face LEFT,
+  // which caused the corgi to visibly flip while airborne. Match the premium
+  // approach — use the run sheet's own right-facing frames for airborne
+  // poses, guaranteeing all states face right without any flipX / mirror.
   { id: 'classic',    name: 'Classic Corgi',   texture: 'corgi_idle',
     runSheetKey: 'corgi_run', runAnimKey: 'run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: false, entitlementProducts: [] },
   // Premium corgis reuse frames of their own run sheet for airborne / landing
   // poses (we intentionally do not use Classic art on premium skins). Frame

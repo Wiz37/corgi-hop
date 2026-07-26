@@ -25,15 +25,19 @@ export const PHYSICS = {
   worldGravity: 2400,        // main.ts arcade.gravity.y
   gravityRise:  -400,        // GameScene.applyAirGravity() delta while rising
   gravityFall:  1000,        // GameScene.applyAirGravity() delta while falling
-  jumpVelocity: -1220,       // GameScene.jumpVelocity
+  jumpVelocity: -980,        // GameScene.jumpVelocity — lowered from -1220
+                             // so peak is ~240 px (≈1.5 body-heights) instead
+                             // of ~372 px. Every constant below is retuned
+                             // for this new arc.
   baseSpeed:     340,        // starting horizontal scroll speed (px/s)
   maxSpeed:      760,        // capped speed at high scores
   speedRampK:      8,        // targetSpeed = baseSpeed + score * speedRampK
   dogColliderW:  120,        // approximate corgi collision box width (px)
   fenceW:         80,        // picket-fence collision width (px)
-  // Height cap = "safe height at slowest jump range" — 55% of peak so the
-  // dog can always clear even in a marginal timing window.
-  maxHurdleH:    170,
+  // Height cap tuned for the LOWER jump arc: max hurdle 150 px comfortably
+  // clears with ~90 px of head-room at peakPx=240. Any taller hurdle would
+  // require pixel-perfect timing, so the generator refuses to spawn one.
+  maxHurdleH:    150,
   minHurdleH:     70,
   minHurdleW:     56,        // narrowest picket fence still visible
   maxHurdleW:    130,        // widest picket fence still clearable in one jump
@@ -68,14 +72,14 @@ export const TIERS: DifficultyTier[] = [
   {
     scoreMin: 0, scoreMax: 7,
     minReactionMs: 450,
-    heights: { min: 70,  max: 95  },
+    heights: { min: 70,  max: 92  },
     widths:  { min: 56,  max: 80  },
     patterns: [{ kind: 'single', weight: 100 }],
   },
   {
     scoreMin: 8, scoreMax: 17,
     minReactionMs: 350,
-    heights: { min: 80,  max: 115 },
+    heights: { min: 78,  max: 105 },
     widths:  { min: 60,  max: 90  },
     patterns: [
       { kind: 'single',      weight: 78 },
@@ -85,7 +89,7 @@ export const TIERS: DifficultyTier[] = [
   {
     scoreMin: 18, scoreMax: 29,
     minReactionMs: 275,
-    heights: { min: 90,  max: 135 },
+    heights: { min: 86,  max: 118 },
     widths:  { min: 62,  max: 100 },
     patterns: [
       { kind: 'single',       weight: 48 },
@@ -97,7 +101,7 @@ export const TIERS: DifficultyTier[] = [
   {
     scoreMin: 30, scoreMax: 49,
     minReactionMs: 220,
-    heights: { min: 95,  max: 150 },
+    heights: { min: 90,  max: 130 },
     widths:  { min: 64,  max: 110 },
     patterns: [
       { kind: 'single',       weight: 30 },
@@ -111,7 +115,7 @@ export const TIERS: DifficultyTier[] = [
   {
     scoreMin: 50, scoreMax: 9999,
     minReactionMs: 200,
-    heights: { min: 100, max: PHYSICS.maxHurdleH },
+    heights: { min: 95,  max: PHYSICS.maxHurdleH },
     widths:  { min: 66,  max: PHYSICS.maxHurdleW },
     patterns: [
       { kind: 'single',       weight: 24 },
@@ -190,8 +194,11 @@ export function validate(c: HurdleCandidate): ValidationResult {
     if (f.width > PHYSICS.maxHurdleW)  reasons.push(`fence too wide: ${f.width} > ${PHYSICS.maxHurdleW}`);
     if (f.width < PHYSICS.minHurdleW)  reasons.push(`fence too narrow (invisible): ${f.width} < ${PHYSICS.minHurdleW}`);
     // Every fence must be clearable by peakPx with a comfy margin.
-    if (f.height > arc.peakPx * 0.55) {
-      reasons.push(`fence exceeds 55% of peakPx (${arc.peakPx.toFixed(0)}): ${f.height}`);
+    // Loosened from 55% → 68% to match the new lower jump arc (peak ~240px).
+    // 68% of 240 = 163 → tallest hurdle 150 stays clearable with ~90px
+    // of body-height + safety clearance above.
+    if (f.height > arc.peakPx * 0.68) {
+      reasons.push(`fence exceeds 68% of peakPx (${arc.peakPx.toFixed(0)}): ${f.height}`);
     }
   }
   // 2) The cluster span (first-to-last edge of a multi-fence group) must fit

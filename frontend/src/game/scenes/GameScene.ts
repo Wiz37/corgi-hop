@@ -28,7 +28,18 @@ export class GameScene extends Phaser.Scene {
 
   private gameSpeed = 340;                // px/s, current world scroll speed
   private targetSpeed = 340;              // eased target
-  private jumpVelocity = -1220;
+  // JUMP HEIGHT FIX: previous value of -1220 produced a peak of ~372 px
+  // (over 2 body-heights) which felt like flying, not hurdling. The new
+  // value -980 gives a peak of ~240 px which is ~1.5 corgi body-heights —
+  // still clears the tallest approved hurdle (155 px + 10 px safety) with
+  // margin, but reads as a natural jump instead of a leap over the trees.
+  //   peakPx = v² / (2 * (worldGravity + gravityRise))
+  //          = 980² / (2 * (2400 - 400))
+  //          = 960 400 / 4 000
+  //          ≈ 240 px
+  // Mirror this in HurdleGenerator.PHYSICS so the 10 000-sequence
+  // validator uses the same physics constant.
+  private jumpVelocity = -980;
   // Base uniform scale set by sizeCorgiUniform(). The body-bounce tween
   // oscillates scaleY around this value, and pose swaps use it as the reset
   // target so scale never drifts during a run.
@@ -366,23 +377,16 @@ export class GameScene extends Phaser.Scene {
    */
   private setPose(logicalPose: 'run' | 'jump' | 'fall' | 'land' | 'hit'): void {
     const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+    // FACING FIX (Classic left-facing airborne): every corgi — including
+    // Classic — now sources jump/fall/land poses from its OWN run sheet.
+    // The run sheets are all right-facing by construction, so the corgi
+    // never faces the wrong way mid-jump. The dedicated corgi_jump.png /
+    // corgi_fall.png / corgi_land.png assets are retained only as a
+    // safety fallback if the run sheet ever fails to preload.
     let texKey: string;
     let frame: number = 0;
-    if (def.id === 'classic') {
-      // Classic has dedicated pose textures.
-      switch (logicalPose) {
-        case 'run':  texKey = 'corgi_run';  break;
-        case 'jump': texKey = 'corgi_jump'; break;
-        case 'fall': texKey = 'corgi_fall'; break;
-        case 'land': texKey = 'corgi_land'; break;
-        case 'hit':  texKey = 'corgi_hit';  break;
-      }
-    } else {
-      // Premium corgi — every pose uses THIS corgi's own run sheet so the
-      // outfit (hat, cape, helmet, bandana, collar) is guaranteed to be
-      // visible during every state. Airborne / landing poses freeze on a
-      // per-corgi tuned frame index.
-      texKey = def.runSheetKey!;
+    if (def.runSheetKey && this.textures.exists(def.runSheetKey)) {
+      texKey = def.runSheetKey;
       switch (logicalPose) {
         case 'run':  frame = 0; break;
         case 'jump': frame = def.jumpFrame ?? 4; break;
@@ -390,9 +394,16 @@ export class GameScene extends Phaser.Scene {
         case 'land': frame = def.landFrame ?? 0; break;
         case 'hit':  frame = def.landFrame ?? 0; break;
       }
+    } else {
+      // Legacy fallback — should never trigger in production.
+      switch (logicalPose) {
+        case 'run':  texKey = 'corgi_run';  break;
+        case 'jump': texKey = 'corgi_jump'; break;
+        case 'fall': texKey = 'corgi_fall'; break;
+        case 'land': texKey = 'corgi_land'; break;
+        case 'hit':  texKey = 'corgi_hit';  break;
+      }
     }
-    // Fallback if the resolved texture isn't loaded (should never happen in
-    // production but keeps us safe).
     if (!this.textures.exists(texKey)) return;
     // Guard against redundant per-frame calls (this prevents sizeCorgiUniform
     // from stopping every launch-pop tween on the first ascend frame).
@@ -403,7 +414,13 @@ export class GameScene extends Phaser.Scene {
     this.corgi.setTexture(texKey, frame);
     this.sizeCorgiUniform();
     this.corgi.setAlpha(1);
+    // ROOT-CAUSE FIX for the "left-facing airborne" regression — force flipX
+    // OFF on every pose swap. Nothing in gameplay ever flips the sprite; the
+    // corgi must remain right-facing during run, takeoff, rise, peak, fall,
+    // land, and revive.
     this.corgi.setFlipX(false);
+    // Also guarantee positive horizontal scale — no negative-scaleX mirror.
+    if (this.corgi.scaleX < 0) this.corgi.setScale(Math.abs(this.corgi.scaleX), this.corgi.scaleY);
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
     this.corgi.clearTint();
   }
