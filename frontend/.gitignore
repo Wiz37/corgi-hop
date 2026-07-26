@@ -37,9 +37,37 @@ yarn-error.*
 !.env.example
 !.env*.example
 
-# Capacitor native output (do not commit — regenerate with `npx cap add`)
-ios/
-android/
+# Capacitor native output — commit projects for reproducible native config,
+# ignore build artifacts and secrets. (Previously fully-ignored; changed
+# during Phase C so custom Info.plist / AndroidManifest / gradle survive
+# `cap sync`.)
+
+# iOS build artifacts
+ios/App/build/
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/output/
+ios/DerivedData/
+ios/.build/
+ios/.xcode.env.local
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcworkspace/xcuserdata/
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/captures/
+android/local.properties
+android/keystore/
+android/app/keystore/
+android/app/google-services.json
+android/app/upload-key.keystore
+android/app/upload-key.jks
+android/.idea/
+android/*.iml
+android/app/*.iml
 
 # typescript
 *.tsbuildinfo
