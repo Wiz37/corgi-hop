@@ -64,6 +64,17 @@ export const CORGIS: CorgiDef[] = [
     premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
 ];
 
+// BONE PRICING — permanent-unlock cost per corgi (spec-approved values).
+// Bones = the "treats" counter. Classic is free. All others cost bones.
+export const CORGI_BONE_PRICE: Record<CorgiId, number> = {
+  classic:   0,
+  starter:   500,
+  cowboy:    1000,
+  superhero: 2000,
+  pirate:    5000,
+  astronaut: 10000,
+};
+
 export interface Entitlements {
   removeAds: boolean;
   starterPack: boolean;
@@ -90,6 +101,20 @@ class GameStateStore {
   totalJumps = 0;
 
   private trialCorgi: CorgiId | null = null; // one-run rewarded trial
+  // Per-corgi permanent unlock table backed by Bones (soft currency).
+  // A corgi id here means the player has spent the listed Bone cost and
+  // owns it forever — restart / close / switch / revive cannot revoke it.
+  boneUnlocks: Record<CorgiId, boolean> = {
+    classic: true,   // classic is always free-owned
+    starter: false,
+    cowboy: false,
+    superhero: false,
+    pirate: false,
+    astronaut: false,
+  };
+  // Anti-double-charge guard — set while a purchase is being processed so
+  // rapid double-taps cannot deduct the price twice or grant two copies.
+  private purchaseInFlight = false;
 
   load(): void {
     this.bestScore = storage.getNumber(K.bestScore, 0);
@@ -101,7 +126,19 @@ class GameStateStore {
     this.starterAdFreeUntil = storage.getNumber(K.starterAdFreeUntil, 0);
     this.totalTreatsEarned = storage.getNumber(K.totalTreatsEarned, 0);
     this.totalJumps = storage.getNumber(K.totalJumps, 0);
+    // Load bone unlocks — classic is always true even in a fresh install.
+    const persisted = storage.getJSON<Record<string, boolean>>(K.boneUnlocks, {} as Record<string, boolean>);
+    this.boneUnlocks = {
+      classic: true,
+      starter:   !!persisted.starter,
+      cowboy:    !!persisted.cowboy,
+      superhero: !!persisted.superhero,
+      pirate:    !!persisted.pirate,
+      astronaut: !!persisted.astronaut,
+    };
   }
+
+  saveBoneUnlocks(): void { storage.setJSON(K.boneUnlocks, this.boneUnlocks); }
 
   saveTreats(): void { storage.setNumber(K.treats, this.treats); }
   saveBest(): void { storage.setNumber(K.bestScore, this.bestScore); }
@@ -141,6 +178,8 @@ class GameStateStore {
 
   isCorgiOwned(id: CorgiId): boolean {
     if (this.trialCorgi === id) return true;
+    // Permanent bone-unlock counts as owned forever.
+    if (this.boneUnlocks[id]) return true;
     const def = CORGIS.find((c) => c.id === id);
     if (!def) return false;
     if (!def.premium) return true;
@@ -150,6 +189,45 @@ class GameStateStore {
       if (p === 'com.corgihop.all_corgis' && this.entitlements.allCorgis) return true;
     }
     return false;
+  }
+
+  /**
+   * Bone-based unlock flow. Deducts Bones exactly once, permanently unlocks
+   * the corgi, and selects it. All rules enforced in one place:
+   *   • Blocked if already owned.
+   *   • Blocked if purchase already in flight (anti double-tap).
+   *   • Blocked if insufficient Bones.
+   *   • Persists BOTH the new balance AND the unlock atomically before
+   *     returning success so a mid-purchase crash cannot leave Bones
+   *     deducted without the unlock (or vice-versa).
+   * Returns { ok, reason } — UI should show `reason` on failure and use
+   * a confirm-dialog BEFORE calling this method.
+   */
+  unlockCorgiWithBones(id: CorgiId): { ok: boolean; reason?: string; spent?: number } {
+    if (this.purchaseInFlight) return { ok: false, reason: 'Purchase already in progress' };
+    if (this.isCorgiOwned(id)) return { ok: false, reason: 'Already unlocked' };
+    const def = CORGIS.find((c) => c.id === id);
+    if (!def) return { ok: false, reason: 'Unknown corgi' };
+    const price = CORGI_BONE_PRICE[id] ?? 0;
+    if (price <= 0) return { ok: false, reason: 'This corgi is free' };
+    if (this.treats < price) return { ok: false, reason: `Need ${price - this.treats} more Bones` };
+    this.purchaseInFlight = true;
+    try {
+      // Deduct + unlock + select — persist each step immediately.
+      this.treats -= price;
+      this.saveTreats();
+      this.boneUnlocks[id] = true;
+      this.saveBoneUnlocks();
+      this.selectedCorgi = id;
+      this.saveSelected();
+      return { ok: true, spent: price };
+    } finally {
+      this.purchaseInFlight = false;
+    }
+  }
+
+  bonePriceFor(id: CorgiId): number {
+    return CORGI_BONE_PRICE[id] ?? 0;
   }
 
   setTrialCorgi(id: CorgiId | null): void {

@@ -68,6 +68,7 @@ export const STORAGE_KEYS = {
   treats: 'treats',
   selectedCorgi: 'selected_corgi',
   ownedCorgis: 'owned_corgis',
+  boneUnlocks: 'bone_unlocks',
   entitlements: 'entitlements',
   runsCompleted: 'runs_completed',
   lastInterstitialAt: 'last_interstitial_at',

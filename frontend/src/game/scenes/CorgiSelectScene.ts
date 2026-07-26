@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState, CORGIS, type CorgiId } from '@/game/systems/GameState';
-import { services } from '@/services';
 import { PolishedButton } from '@/game/ui/PolishedButton';
 
 /**
@@ -95,14 +94,23 @@ export class CorgiSelectScene extends Phaser.Scene {
     }).setOrigin(0.5));
 
     // Action button
+    const price = gameState.bonePriceFor(id);
     let actionLabel: string;
     let color = 0x4bb8ff, shadow = 0x1f6ea0;
     if (owned) {
       actionLabel = selected ? 'SELECTED' : 'SELECT';
       color = selected ? 0xffb02f : 0x4bb04b;
       shadow = selected ? 0xb26810 : 0x1e6b1e;
-    } else if (def.premium) {
-      actionLabel = 'TRY (AD)';
+    } else if (price > 0) {
+      // Bone-buy button: show the exact price. Colour = orange (spend cue).
+      actionLabel = `BUY  ${price}`;
+      color = 0xffb02f; shadow = 0xb26810;
+      // Also show a small "bone" glyph label beneath the price so the price
+      // is unambiguous even without the icon font.
+      c.add(this.add.text(0, 108, `BONES`, {
+        fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '14px',
+        fontStyle: '700', color: '#8a5000',
+      }).setOrigin(0.5));
     } else {
       actionLabel = 'LOCKED';
     }
@@ -119,18 +127,108 @@ export class CorgiSelectScene extends Phaser.Scene {
           gameState.saveSelected();
           gameState.clearTrial();
           this.scene.restart();
-        } else {
-          const ok = await services.ads.showRewarded('trial_corgi');
-          if (ok) {
-            gameState.setTrialCorgi(id);
-            gameState.selectedCorgi = id;
-            gameState.saveSelected();
-            this.scene.restart();
-          }
+        } else if (price > 0) {
+          // Bone-based unlock — show confirm dialog before spending.
+          this.showBonePurchaseConfirm(id, price, def.name);
         }
       },
     });
 
+    // Owned-badge for corgis already unlocked with bones — reassurance that
+    // the previous purchase persisted.
+    if (owned && id !== 'classic') {
+      const badge = this.add.container(w / 2 - 30, -h / 2 + 30);
+      const bg = this.add.graphics();
+      bg.fillStyle(0x4bb04b, 1); bg.fillCircle(0, 0, 22);
+      bg.lineStyle(3, 0xffffff, 1); bg.strokeCircle(0, 0, 22);
+      badge.add(bg);
+      badge.add(this.add.text(0, 0, '✓', {
+        fontFamily: 'system-ui', fontSize: '28px', fontStyle: '900', color: '#ffffff',
+      }).setOrigin(0.5));
+      c.add(badge);
+    }
+
     c.setData('testId', `select-corgi-${id}`);
+  }
+
+  /**
+   * Bone-purchase confirmation dialog. Non-blocking to gameplay (we're on the
+   * corgi picker scene). Anti double-tap enforced BOTH via the local
+   * `confirming` guard and via GameState's purchaseInFlight semaphore.
+   */
+  private confirming = false;
+  private showBonePurchaseConfirm(id: CorgiId, price: number, name: string): void {
+    if (this.confirming) return;
+    if (gameState.treats < price) {
+      this.showToast(`Need ${price - gameState.treats} more Bones`);
+      return;
+    }
+    this.confirming = true;
+    // Dim overlay
+    const dim = this.add.graphics().setDepth(60);
+    dim.fillStyle(0x000000, 0.55); dim.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    dim.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains);
+    // Card
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const cardW = 520, cardH = 380;
+    const cardG = this.add.graphics().setDepth(61);
+    cardG.fillStyle(0xfff8ea, 1);
+    cardG.fillRoundedRect(cx - cardW/2, cy - cardH/2, cardW, cardH, 24);
+    cardG.lineStyle(6, 0xffb02f, 1);
+    cardG.strokeRoundedRect(cx - cardW/2, cy - cardH/2, cardW, cardH, 24);
+    const title = this.add.text(cx, cy - 130, 'CONFIRM UNLOCK', {
+      fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '30px', fontStyle: '900', color: '#24304a',
+    }).setOrigin(0.5).setDepth(62);
+    const body = this.add.text(cx, cy - 60,
+      `Unlock ${name} for\n${price} Bones?`, {
+      fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '26px', color: '#24304a', align: 'center',
+    }).setOrigin(0.5).setDepth(62);
+    const balance = this.add.text(cx, cy + 10,
+      `Balance: ${gameState.treats} → ${gameState.treats - price}`, {
+      fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '22px', fontStyle: '700', color: '#8a5000',
+    }).setOrigin(0.5).setDepth(62);
+    // Buttons
+    let closed = false;
+    const close = () => {
+      if (closed) return; closed = true;
+      dim.destroy(); cardG.destroy(); title.destroy(); body.destroy(); balance.destroy();
+      confirmBtn.destroy(); cancelBtn.destroy();
+      this.confirming = false;
+    };
+    const cancelBtn = new PolishedButton(this, {
+      x: cx - 120, y: cy + 110, w: 200, h: 76,
+      label: 'CANCEL', color: 0x2a3d67, shadowColor: 0x18223a,
+      testId: `bone-buy-cancel-${id}`,
+      onTap: () => close(),
+    });
+    const confirmBtn = new PolishedButton(this, {
+      x: cx + 120, y: cy + 110, w: 200, h: 76,
+      label: 'CONFIRM', color: 0x4bb04b, shadowColor: 0x1e6b1e,
+      testId: `bone-buy-confirm-${id}`,
+      onTap: () => {
+        if (closed) return;    // anti double-tap
+        closed = true;         // seal even before GameState guard fires
+        const res = gameState.unlockCorgiWithBones(id);
+        close();
+        if (res.ok) {
+          this.showToast(`Unlocked ${name}!  −${res.spent} Bones`);
+          // Rebuild the scene so the new "SELECTED" state is reflected.
+          this.time.delayedCall(500, () => this.scene.restart());
+        } else {
+          this.showToast(res.reason ?? 'Purchase failed');
+        }
+      },
+    });
+  }
+
+  private showToast(text: string): void {
+    const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 200, text, {
+      fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '24px', fontStyle: '900',
+      color: '#ffffff', backgroundColor: '#18223a', padding: { left: 16, right: 16, top: 10, bottom: 10 },
+    }).setOrigin(0.5).setDepth(80);
+    this.tweens.add({
+      targets: t, alpha: 0, y: t.y - 40, duration: 1800,
+      onComplete: () => t.destroy(),
+    });
   }
 }
