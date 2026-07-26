@@ -34,6 +34,10 @@ export class GameScene extends Phaser.Scene {
   // bounce tween when the world speed changes meaningfully (avoids
   // rebuilding a Phaser tween every frame).
   private currentRunFps = 0;
+  // Phase accumulator for the vertical body bob applied while grounded and
+  // running. Advances proportionally to `currentRunFps` so the bob stays
+  // synced to the stride cadence at every game speed.
+  private runBobPhase = 0;
   // Distance in world-pixels a single run frame should "cover". Chosen so
   // the corgi's stride cadence feels natural across the full speed range
   // (340 → 760 px/s ⇒ 12–27 fps). Prevents the "ice-skating" effect where
@@ -161,6 +165,12 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', this.tryJump, this);
     this.input.keyboard?.on('keydown-SPACE', this.tryJump, this);
     this.input.keyboard?.on('keydown-UP', this.tryJump, this);
+
+    // POST_UPDATE runs AFTER Arcade physics has copied body.y back to
+    // sprite.y for the frame. Applying the vertical body-bob here means the
+    // physics engine can't overwrite our draw offset — the bob is visible
+    // every frame it's set.
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.applyRunBob, this);
 
     // Fire an event so HUD picks up score changes.
     this.events.emit('scoreChanged', this.score);
@@ -336,6 +346,24 @@ export class GameScene extends Phaser.Scene {
     this.corgi.clearTint();
   }
 
+  /**
+   * Applied AFTER Arcade physics — safely nudges the sprite's y up by a
+   * sine-wave bob whenever the corgi is on the ground and running. Never
+   * touches the physics body, so gravity / jump velocity behave normally.
+   */
+  private applyRunBob(): void {
+    if (this.ended || !this.corgi) return;
+    const body = this.corgi.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) return;
+    // Only bob while on the ground with roughly zero vertical velocity.
+    const nearGround = this.corgi.y >= this.groundY - 5;
+    const still = Math.abs(body.velocity.y) < 20;
+    if (!(nearGround && still)) return;
+    const bob = Math.sin(this.runBobPhase);
+    const upBob = Math.max(0, bob) * 3; // 0..3 px
+    this.corgi.y = this.groundY - upBob;
+  }
+
   public tryJump = (): void => {
     if (this.ended || !this.running) return;
     this.jumpBufferedUntil = this.time.now + this.BUFFER_MS;
@@ -417,8 +445,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Constrain corgi to ground
-    if (this.corgi.y >= this.groundY) {
-      this.corgi.y = this.groundY;
+    // We treat a small band above `groundY` as "still on the ground" so the
+    // per-stride vertical body bob (see below) does not accidentally flip the
+    // corgi into the airborne branch.
+    const BOB_TOLERANCE = 5;
+    if (this.corgi.y >= this.groundY - BOB_TOLERANCE
+        && (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y >= -1) {
+      // NOTE: we DON'T force `this.corgi.y = groundY` here anymore. The
+      // per-stride bob below sets y to `groundY - upBob` each frame. Doing
+      // this at the top of the branch would immediately erase the bob.
       const body = this.corgi.body as Phaser.Physics.Arcade.Body;
       // ROOT-CAUSE FIX (bug 2): only trigger the landing squash if the corgi
       // was actually FALLING FAST (>400 px/s downward). Otherwise plain
@@ -464,6 +499,15 @@ export class GameScene extends Phaser.Scene {
         if (!this.ended && (!this.runBounceTween || !this.runBounceTween.isPlaying())) {
           this.startRunBounce();
         }
+      }
+
+      // ------ Vertical body bob (grounded-only, physics-safe) ------
+      // Phase clock advances proportional to `currentRunFps` (one full bob
+      // per 4 anim frames). The actual y offset is applied in the
+      // POST_UPDATE hook (see `applyRunBob`) so physics.step cannot
+      // overwrite it before the frame renders.
+      if (!this.ended) {
+        this.runBobPhase += dt * this.currentRunFps * (Math.PI * 2 / 4);
       }
     } else {
       // Airborne — swap to jump/fall texture (NO angle tween, NO rotation).
