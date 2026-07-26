@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState } from '@/game/systems/GameState';
 import { drawCompactTrophy, drawCompactBones, drawCircleControl } from '@/game/ui/PolishedHUD';
+import { sound } from '@/services/audio/SoundService';
 import type { GameScene } from './GameScene';
 
 /**
@@ -112,6 +113,12 @@ export class HUDScene extends Phaser.Scene {
     }
 
     // ---- Wire events from GameScene ----
+    // Mute / unmute button — small circular control in the top-left BELOW
+    // the trophy pill so it doesn't overlap the trophy, the centre score,
+    // the pause button, or the paw jump control. 60 px visible with a
+    // 76 px tap radius (comfortable for thumbs on phones).
+    this.buildMuteButton(60, 200);
+
     const MILESTONES = new Set([10, 25, 50, 75, 100]);
     let lastNewBestBannerAt = -1;
     gs.events.on('scoreChanged', (s: number) => {
@@ -185,6 +192,53 @@ export class HUDScene extends Phaser.Scene {
     if (score === 100) return 'LEGENDARY!';
     return `${score}!`;
   }
+
+  /**
+   * Small mute/unmute icon in the top-left corner. Uses the same procedural
+   * drawing style as the rest of the HUD (Graphics + Text, no extra image
+   * asset). Persists state via `sound.setMuted` (which writes to
+   * localStorage). Tap area 76×76 for comfortable thumb targeting; visible
+   * disc is 60×60 so it sits neatly under the trophy pill.
+   */
+  private buildMuteButton(cx: number, cy: number): void {
+    const r = 30;
+    // Circular tap-target
+    const bg = this.add.graphics().setDepth(58);
+    const icon = this.add.text(cx, cy, sound.isMuted ? '🔇' : '🔊', {
+      fontFamily: 'system-ui, -apple-system, "Apple Color Emoji", "Segoe UI Emoji", sans-serif',
+      fontSize: '36px',
+    }).setOrigin(0.5).setDepth(60);
+    icon.setData('testId', 'hud-mute-button');
+
+    const paint = (muted: boolean) => {
+      bg.clear();
+      // Drop shadow
+      bg.fillStyle(0x18223a, 0.5);
+      bg.fillCircle(cx + 2, cy + 3, r);
+      // Main fill — dim when muted, bright when playing
+      bg.fillStyle(muted ? 0x8fa2c4 : 0xffffff, 0.9);
+      bg.fillCircle(cx, cy, r);
+      bg.lineStyle(4, 0x24304a, 0.85);
+      bg.strokeCircle(cx, cy, r);
+      icon.setText(muted ? '🔇' : '🔊');
+    };
+    paint(sound.isMuted);
+
+    // 76 px hit-box for comfortable tap
+    const hit = this.add.zone(cx, cy, 76, 76)
+      .setDepth(61)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => {
+      this.tweens.add({ targets: icon, scale: 0.85, duration: 60, yoyo: true });
+      const nowMuted = sound.toggleMuted();
+      paint(nowMuted);
+    });
+    // Also subscribe to programmatic mute changes (e.g. from a future
+    // Settings screen) so the icon stays in sync.
+    const unsubscribe = sound.onMuteChanged(paint);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, unsubscribe);
+  }
+
 
   private spawnMilestoneConfetti(): void {
     // Small, tasteful confetti burst — sourced from a procedural coloured

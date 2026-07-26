@@ -11,6 +11,7 @@ import { CorgiSelectScene } from './game/scenes/CorgiSelectScene';
 import { PrivacyScene } from './game/scenes/PrivacyScene';
 import { HowToPlayScene } from './game/scenes/HowToPlayScene';
 import { services } from './services';
+import { sound } from './services/audio/SoundService';
 
 // Design resolution — we target a portrait 9:16-ish canvas (like the reference image).
 // Phaser scales this to fit the device using Phaser.Scale.FIT while preserving aspect.
@@ -18,6 +19,10 @@ export const GAME_WIDTH = 720;
 export const GAME_HEIGHT = 1280;
 
 function boot() {
+  // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
+  // Safari and iOS WKWebView both suspend the audio context until then.
+  sound.init();
+
   const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO, // WebGL preferred, Canvas fallback
     parent: 'game',

@@ -3,6 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { buildParallax, PARALLAX_SPEEDS, type ParallaxLayers } from '@/game/systems/Parallax';
 import { gameState, CORGIS } from '@/game/systems/GameState';
 import { services } from '@/services';
+import { sound } from '@/services/audio/SoundService';
 import {
   generateValidated,
   validate,
@@ -215,10 +216,15 @@ export class GameScene extends Phaser.Scene {
     this.events.emit('scoreChanged', this.score);
     this.events.emit('treatsChanged', gameState.treats);
 
+    // Start looping background music. Idempotent — noop if already playing.
+    sound.startMusic();
+
     // Cleanly stop HUD & pause when parent scene stops
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.removeAllListeners();
       this.input.keyboard?.removeAllListeners();
+      // Fully stop music on shutdown (menu / restart resets the loop).
+      sound.stopMusic();
     });
   }
 
@@ -490,6 +496,8 @@ export class GameScene extends Phaser.Scene {
       gameState.totalJumps += 1;
       gameState.saveTotals();
       this.setPose('jump');
+      // Light bouncy SFX — synced with the launch pop so the takeoff reads.
+      sound.playBounce();
       this.corgi.anims.stop();
       // PHYSICAL-JUMP POLISH — Emit a one-shot "launch pop" tween that
       // squash-stretches the sprite briefly on takeoff. Purely visual: the
@@ -635,6 +643,10 @@ export class GameScene extends Phaser.Scene {
         // corgi_land.png; premium corgis freeze on their `landFrame` of
         // their own run sheet so the outfit stays visible).
         this.setPose('land');
+        // Soft paw-down thud SFX — only when we ACTUALLY register a hard
+        // landing (matches the setPose('land') / squash trigger, not
+        // gravity-slop rebounds).
+        sound.playThud();
         this.corgi.anims.stop();
         this.stopRunBounce();   // squash pose — no bounce while landing
         this.time.delayedCall(90, () => {
@@ -841,6 +853,8 @@ export class GameScene extends Phaser.Scene {
   private onObstaclePassed(): void {
     this.score += 1;
     this.events.emit('scoreChanged', this.score);
+    // Cheerful ding on every cleared hurdle.
+    sound.playDing();
   }
 
   private checkObstacleCollisions(time: number): void {
@@ -877,6 +891,9 @@ export class GameScene extends Phaser.Scene {
     this.running = false;
     this.ended = true;
     this.stopRunBounce();      // no more scaleY oscillation after death
+    // Game-over descending arpeggio + stop the background music.
+    sound.playGameOver();
+    sound.stopMusic();
     this.cameras.main.shake(220, 0.012);
     this.setPose('hit');
     this.corgi.anims.stop();

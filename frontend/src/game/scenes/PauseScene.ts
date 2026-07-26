@@ -1,12 +1,15 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { PolishedButton } from '@/game/ui/PolishedButton';
+import { sound } from '@/services/audio/SoundService';
 
 /** Semi-transparent pause overlay with Resume / Restart / Menu buttons. */
 export class PauseScene extends Phaser.Scene {
   constructor() { super('PauseScene'); }
 
   create(): void {
+    // Silence the background loop while the pause overlay is up.
+    sound.pauseMusic();
     const dim = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55).setDepth(0);
     dim.setInteractive();
 
@@ -30,7 +33,7 @@ export class PauseScene extends Phaser.Scene {
       x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 - 60, w: 400, h: 110,
       label: 'RESUME', color: 0x4bb04b, shadowColor: 0x1e6b1e,
       testId: 'pause-resume',
-      onTap: () => { this.scene.resume('GameScene'); this.scene.stop(); },
+      onTap: () => { sound.resumeMusic(); this.scene.resume('GameScene'); this.scene.stop(); },
     });
     new PolishedButton(this, {
       x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 + 60, w: 400, h: 110,
