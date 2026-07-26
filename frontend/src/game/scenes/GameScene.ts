@@ -22,6 +22,14 @@ export class GameScene extends Phaser.Scene {
   private gameSpeed = 340;                // px/s, current world scroll speed
   private targetSpeed = 340;              // eased target
   private jumpVelocity = -1220;
+  // Base uniform scale set by sizeCorgiUniform(). The body-bounce tween
+  // oscillates scaleY around this value, and pose swaps use it as the reset
+  // target so scale never drifts during a run.
+  private baseScale = 1;
+  // Physics-safe body bounce for the "running" feel — a yoyo on scaleY,
+  // which never modifies the physics body's y coordinate. Applies to ALL
+  // corgis (classic ALSO plays its 8-frame leg animation on top of this).
+  private runBounceTween: Phaser.Tweens.Tween | null = null;
   private score = 0;
   private treatsThisRun = 0;
   private doubleTreatsClaimed = false;
@@ -96,12 +104,15 @@ export class GameScene extends Phaser.Scene {
     if (isClassic && this.anims.exists('run')) {
       this.corgi.play('run');
     }
-    // NOTE: no y-tween or scaleY oscillation. For premium corgis the static
-    // outfit remains stable and right-facing — a stable natural-looking
-    // corgi is preferable to a fragile fake-run trick.
+    // Kick off the physics-safe body-bounce for the running gait. Applies to
+    // EVERY corgi so premium outfits also visibly "run" and never look like
+    // a still image sliding across the ground.
+    this.startRunBounce();
     // Collision box in physics body units — since arcade physics bodies are
     // sized in *source texture* units, compute from the source dimensions so the
     // hitbox stays consistent regardless of displaySize.
+    // NOTE: this is intentionally done AFTER sizeCorgiUniform() because the
+    // latter also sets a body — we override with a slightly tighter box.
     this.corgi.body!.setSize(this.corgi.width * 0.55, this.corgi.height * 0.6, false);
     this.corgi.body!.setOffset(this.corgi.width * 0.22, this.corgi.height * 0.32);
     (this.corgi.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(false);
@@ -170,6 +181,10 @@ export class GameScene extends Phaser.Scene {
    * applies it as `setScale(s, s)`. This preserves the natural aspect ratio
    * of every source texture — no more independent width/height stretching.
    *
+   * If a run-bounce tween is active it is stopped first so we can update
+   * `baseScale` cleanly, and callers decide whether to restart it (they do
+   * so after entering the "run" state via `startRunBounce()`).
+   *
    * Also re-fits the arcade-physics body to match the visible dog so
    * collisions stay accurate as the texture changes between run / jump /
    * fall / land / hit poses.
@@ -178,7 +193,12 @@ export class GameScene extends Phaser.Scene {
     const TARGET_H = 160; // approved gameplay height
     const src = this.corgi.frame?.height ?? this.corgi.height;
     if (!src) return;
+    if (this.runBounceTween && this.runBounceTween.isPlaying()) {
+      this.runBounceTween.stop();
+      this.runBounceTween = null;
+    }
     const s = TARGET_H / src;
+    this.baseScale = s;
     this.corgi.setScale(s, s);
     // Physics body — inset by ~15% on each side so the hit-box hugs the dog
     // rather than the whole transparent bounding rectangle.
@@ -186,10 +206,42 @@ export class GameScene extends Phaser.Scene {
     if (body) {
       const w = this.corgi.width;
       const h = this.corgi.height;
-      const bw = w * 0.7;
-      const bh = h * 0.85;
+      const bw = w * 0.62;
+      const bh = h * 0.78;
       body.setSize(bw, bh, false);
       body.setOffset((w - bw) / 2, h - bh);
+    }
+  }
+
+  /**
+   * Start the running body-bounce. Physics-safe because it only modifies
+   * `scaleY` — the sprite's `y` coordinate is left alone so arcade physics
+   * (gravity + jump velocity) works normally. Origin is (0.5, 1) so the
+   * bounce compresses toward the feet, exactly like a real running gait.
+   * Works for CLASSIC (on top of the 8-frame animation) and every premium
+   * corgi (where it is the only source of motion).
+   */
+  private startRunBounce(): void {
+    if (this.runBounceTween && this.runBounceTween.isPlaying()) return;
+    if (this.baseScale <= 0) return;
+    this.runBounceTween = this.tweens.add({
+      targets: this.corgi,
+      scaleY: this.baseScale * 0.94,
+      duration: 190,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /** Stop the running bounce and reset scaleY to the base value. */
+  private stopRunBounce(): void {
+    if (this.runBounceTween) {
+      this.runBounceTween.stop();
+      this.runBounceTween = null;
+    }
+    if (this.corgi) {
+      this.corgi.setScale(this.baseScale, this.baseScale);
     }
   }
 
@@ -225,6 +277,9 @@ export class GameScene extends Phaser.Scene {
     const onGround = this.corgi.body!.velocity.y === 0 && this.corgi.y >= this.groundY - 1;
     const canCoyote = now < this.coyoteUntil;
     if ((onGround || canCoyote) && now < this.jumpBufferedUntil) {
+      // Stop the running bounce BEFORE applying jump velocity so scaleY is
+      // reset cleanly. The tween can no longer interfere with the jump arc.
+      this.stopRunBounce();
       (this.corgi.body as Phaser.Physics.Arcade.Body).setVelocityY(this.jumpVelocity);
       this.jumpBufferedUntil = 0;
       this.coyoteUntil = 0;
@@ -300,6 +355,7 @@ export class GameScene extends Phaser.Scene {
         // displayHeight anymore (that was the source of the rocking).
         this.setCorgiTexture('corgi_land');
         this.corgi.anims.stop();
+        this.stopRunBounce();   // squash pose — no bounce while landing
         const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
         const isClassic = def.id === 'classic';
         this.time.delayedCall(90, () => {
@@ -311,6 +367,8 @@ export class GameScene extends Phaser.Scene {
               // Premium: keep showing outfit texture
               this.setCorgiTexture(def.texture);
             }
+            // Restart the physics-safe body-bounce for the run.
+            this.startRunBounce();
           }
         });
       } else {
@@ -324,12 +382,22 @@ export class GameScene extends Phaser.Scene {
             this.corgi.play('run');
           }
         }
+        // Make sure the body-bounce is running whenever we are grounded and
+        // still alive — recovers from any edge case where it was stopped.
+        if (!this.ended && (!this.runBounceTween || !this.runBounceTween.isPlaying())) {
+          this.startRunBounce();
+        }
       }
     } else {
       // Airborne — swap to jump/fall texture (NO angle tween, NO rotation).
       const vy = (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y;
       const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
       const isClassic = def.id === 'classic';
+      // Body-bounce must not run while airborne — stops the scaleY yoyo
+      // interfering with the natural jump/fall silhouette.
+      if (this.runBounceTween && this.runBounceTween.isPlaying()) {
+        this.stopRunBounce();
+      }
       if (vy < 0) {
         // Ascending
         this.setCorgiTexture(isClassic ? 'corgi_jump' : def.texture);
@@ -564,6 +632,7 @@ export class GameScene extends Phaser.Scene {
     // pop for feedback but never rotate the body.
     this.running = false;
     this.ended = true;
+    this.stopRunBounce();      // no more scaleY oscillation after death
     this.cameras.main.shake(220, 0.012);
     this.setCorgiTexture('corgi_hit');
     this.corgi.anims.stop();
