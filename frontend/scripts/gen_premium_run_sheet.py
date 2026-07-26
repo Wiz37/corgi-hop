@@ -32,6 +32,17 @@ ASSETS = Path(__file__).resolve().parents[1] / "public" / "assets"
 # Per-corgi identity + prompt fragments
 # ------------------------------------------------------------------
 PROFILES = {
+    "classic": {
+        "portrait": "corgi_idle.png",
+        "outfit_desc": (
+            "NO OUTFIT and NO ACCESSORIES AT ALL. This is the base/regular/classic "
+            "corgi — a plain Pembroke Welsh Corgi with natural orange-and-white fur, "
+            "a small brown nose, a warm smile, and normal upright pointed ears. "
+            "Absolutely no collar, no tag, no hat, no bandana, no cape, no mask, "
+            "no helmet, no backpack, no emblem, no chest strap, no glasses. The dog "
+            "must look identical to the character reference except in running poses."
+        ),
+    },
     "starter": {
         "portrait": "corgi_starter.png",
         "outfit_desc": (
