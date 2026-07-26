@@ -74,22 +74,26 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('logo_corgi_hop', '/assets/logo_corgi_hop.png');
 
     // Corgi: 8-frame horizontal run sheet (2928 x 352 => 366 x 352 per frame).
-    this.load.spritesheet('corgi_run', '/assets/corgi_run_sheet.png', {
+    // Cache-bust query string (`?v=…`) forces the browser to fetch the latest
+    // repaired PNG whenever the corgi assets are updated — bypasses any stale
+    // sprite data cached from earlier gameplay sessions.
+    const V = 'v=20260726b';
+    this.load.spritesheet('corgi_run', `/assets/corgi_run_sheet.png?${V}`, {
       frameWidth: 366,
       frameHeight: 352,
     });
-    this.load.image('corgi_jump', '/assets/corgi_jump.png');
-    this.load.image('corgi_fall', '/assets/corgi_fall.png');
-    this.load.image('corgi_land', '/assets/corgi_land.png');
-    this.load.image('corgi_hit', '/assets/corgi_hit.png');
-    this.load.image('corgi_idle', '/assets/corgi_idle.png');
+    this.load.image('corgi_jump', `/assets/corgi_jump.png?${V}`);
+    this.load.image('corgi_fall', `/assets/corgi_fall.png?${V}`);
+    this.load.image('corgi_land', `/assets/corgi_land.png?${V}`);
+    this.load.image('corgi_hit',  `/assets/corgi_hit.png?${V}`);
+    this.load.image('corgi_idle', `/assets/corgi_idle.png?${V}`);
 
     // Cosmetic corgis
-    this.load.image('corgi_cowboy', '/assets/corgi_cowboy.png');
-    this.load.image('corgi_pirate', '/assets/corgi_pirate.png');
-    this.load.image('corgi_superhero', '/assets/corgi_superhero.png');
-    this.load.image('corgi_astronaut', '/assets/corgi_astronaut.png');
-    this.load.image('corgi_starter', '/assets/corgi_starter.png');
+    this.load.image('corgi_cowboy',    `/assets/corgi_cowboy.png?${V}`);
+    this.load.image('corgi_pirate',    `/assets/corgi_pirate.png?${V}`);
+    this.load.image('corgi_superhero', `/assets/corgi_superhero.png?${V}`);
+    this.load.image('corgi_astronaut', `/assets/corgi_astronaut.png?${V}`);
+    this.load.image('corgi_starter',   `/assets/corgi_starter.png?${V}`);
 
     // Obstacles
     this.load.image('fence', '/assets/fence.png');
