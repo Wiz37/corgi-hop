@@ -70,15 +70,24 @@ workflows:
         - corgi_hop_ios_public_keys   # RC + AdMob public identifiers
         - corgi_hop_public_urls       # legal / support URLs
       vars:
-        APP_STORE_APPLE_ID: 0    # replaced by the integration below
         BUNDLE_ID: com.corgihop.game
         XCODE_WORKSPACE: ios/App/App.xcworkspace
         XCODE_SCHEME: App
         XCODE_CONFIG: Release
         MARKETING_VERSION: 1.0.0
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.corgihop.game
+        # Manual code signing using pre-uploaded credentials from
+        # Codemagic → Teams → Code signing identities.
+        # BEFORE the first build, upload:
+        #   • an iOS Distribution certificate named `corgi_hop_distribution`
+        #   • an App Store provisioning profile named `corgi_hop_app_store`
+        #     that is bound to bundle id `com.corgihop.game`.
+        # Nothing sensitive is committed — Codemagic supplies them at
+        # build time from the encrypted store.
+        certificates:
+          - corgi_hop_distribution
+        provisioning_profiles:
+          - corgi_hop_app_store
 
     triggering:
       events:
@@ -196,16 +205,15 @@ workflows:
         working_directory: frontend/ios/App
 
       # -------------------------------------------------------------------
-      - name: Fetch signing certificates + provisioning profiles
+      - name: Prepare keychain + bind pre-uploaded cert / profile to Xcode
         script: |
           set -eux
-          # Codemagic's built-in signing helper reads the App Store Connect
-          # integration `Corgi Hop Apple` and pulls the matching iOS
-          # distribution cert + a profile scoped to com.corgihop.game.
+          # Codemagic has already dropped the certificate (`corgi_hop_distribution`)
+          # and provisioning profile (`corgi_hop_app_store`) referenced in
+          # environment.ios_signing into the runner's filesystem. Initialise
+          # the keychain and bind the profile to the Xcode project so
+          # xcode-project build-ipa can pick it up without opening Xcode.
           keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-              --type IOS_APP_STORE \
-              --create
           keychain add-certificates
           xcode-project use-profiles
 
