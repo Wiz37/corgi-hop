@@ -722,14 +722,42 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Randomised treats — sometimes over the fences, sometimes between them.
-    if (Math.random() < 0.6) {
-      const treatCount = Math.random() < 0.25 ? 3 : Math.random() < 0.5 ? 2 : 1;
+    // ---- Bone (treat) pickups — HALVED SPAWN FREQUENCY ----
+    // Configurable multiplier applied ONLY to gameplay collectible spawning.
+    // This does NOT reduce:
+    //   - the value of each Bone (still +1 to gameState.treats via collectTreat)
+    //   - milestone rewards
+    //   - unlock prices
+    //   - already-saved Bone balances
+    // Set to 0.5 per spec so approximately half as many Bones spawn per run.
+    // We scale ONLY the trigger probability (not the per-group count) so the
+    // math is a clean 50%: originally ~1.125 bones per candidate → now ~0.56.
+    const BONE_SPAWN_RATE_MULTIPLIER = 0.5;
+    const baseTriggerChance = 0.6;
+    if (Math.random() < baseTriggerChance * BONE_SPAWN_RATE_MULTIPLIER) {
+      // Group-size distribution — kept identical to previous behaviour so
+      // individual clusters still feel varied. 3-bone clusters remain rare
+      // ("rare golden bones" per spec — see collectTreat / treat visual).
+      const r = Math.random();
+      const treatCount = r < 0.25 ? 3 : r < 0.625 ? 2 : 1;
       const shortH = candidate.fences[0].height;
       const baseX = candidate.fences[0].x;
-      for (let i = 0; i < treatCount; i++) {
-        const tx = baseX + Phaser.Math.Between(20, 260) + i * 70;
+      // Extra safety: never spawn a Bone INSIDE a fence's collision zone.
+      // Reject any candidate x that lies within a fence's width band.
+      const forbid = candidate.fences.map(f => ({
+        min: f.x - f.width / 2 - 8,
+        max: f.x + f.width / 2 + 8,
+      }));
+      const spawnableX = (x: number) => forbid.every(z => x < z.min || x > z.max);
+      let placed = 0;
+      let attempts = 0;
+      while (placed < treatCount && attempts < treatCount * 4) {
+        attempts += 1;
+        const tx = baseX + Phaser.Math.Between(20, 260) + placed * 70;
         const ty = this.groundY - shortH - 30 - Phaser.Math.Between(0, 100);
+        if (!spawnableX(tx)) continue;
         this.spawnTreat(tx, ty);
+        placed += 1;
       }
     }
 
