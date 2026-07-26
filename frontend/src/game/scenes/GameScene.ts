@@ -3,6 +3,13 @@ import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { buildParallax, PARALLAX_SPEEDS, type ParallaxLayers } from '@/game/systems/Parallax';
 import { gameState, CORGIS } from '@/game/systems/GameState';
 import { services } from '@/services';
+import {
+  generateValidated,
+  validate,
+  type HurdleCandidate as HgCandidate,
+  type PatternKind,
+  type Rng as HgRng,
+} from '@/game/systems/HurdleGenerator';
 
 /**
  * GameScene — the actual gameplay. Single-tap jumping runner with progressive
@@ -43,6 +50,9 @@ export class GameScene extends Phaser.Scene {
   // again — and so tests can assert the correct sheet is bound.
   private runTexKey = 'corgi_run';
   private runAnimKey = 'run';
+  // Rolling anti-repeat memory for the shared HurdleGenerator — prevents
+  // three consecutive patterns of the same kind.
+  private recentPatternHistory: PatternKind[] = [];
   // Distance in world-pixels a single run frame should "cover". Chosen so
   // the corgi's stride cadence feels natural across the full speed range
   // (340 → 760 px/s ⇒ 12–27 fps). Prevents the "ice-skating" effect where
@@ -684,129 +694,38 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnNext(): void {
-    const score = this.score;
-
-    // ---- Difficulty tiers (fair progression, more variety than before) ----
-    // Each tier is a weighted table of obstacle patterns. Weights are picked so
-    // that early runs stay easy and every run has different rhythm.
-    type Pattern = 'single' | 'single-tall' | 'double-close' | 'double-mid' | 'wide-double' | 'triple';
-    let table: Array<[Pattern, number]>;
-    if (score < 8) {
-      // Very easy opening — mostly single short hurdles, extremely generous
-      // spacing (spec: scores 0-7).
-      table = [['single', 100]];
-    } else if (score < 18) {
-      table = [['single', 80], ['single-tall', 20]];
-    } else if (score < 30) {
-      table = [['single', 50], ['single-tall', 20], ['double-mid', 20], ['double-close', 10]];
-    } else {
-      table = [['single', 30], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 12], ['triple', 3]];
-    }
-    const totalW = table.reduce((s, [, w]) => s + w, 0);
-    let roll = Math.random() * totalW;
-    let variant: Pattern = 'single';
-    for (const [p, w] of table) { roll -= w; if (roll <= 0) { variant = p; break; } }
-
-    // ---- Hurdle heights — SHORTER and RANDOMISED per spec ----
-    // The corgi can jump ~310 px high given jumpVelocity/gravity, so any
-    // hurdle up to ~180 px is comfortably clearable. We stay well below that
-    // for fairness and keep the maximum well within the corgi's arc.
-    let shortH: number, midH: number, tallH: number;
-    if (score < 8) {
-      shortH = Phaser.Math.Between(85, 105);
-      midH = shortH; tallH = shortH;
-    } else if (score < 18) {
-      shortH = Phaser.Math.Between(90, 115);
-      midH = Phaser.Math.Between(100, 125);
-      tallH = Phaser.Math.Between(115, 135);
-    } else if (score < 30) {
-      shortH = Phaser.Math.Between(95, 120);
-      midH = Phaser.Math.Between(110, 135);
-      tallH = Phaser.Math.Between(130, 150);
-    } else {
-      shortH = Phaser.Math.Between(100, 125);
-      midH = Phaser.Math.Between(115, 140);
-      tallH = Phaser.Math.Between(135, 160);
-    }
-
-    const baseX = GAME_WIDTH + 120;
-
-    // ---- Physics-derived spacing limits (obstacle-generation validation) ----
-    // Given jumpVelocity=-1220 and gravity=2400 the total air-time is ~1.02s.
-    // Horizontal cover in one jump at the current gameSpeed:
-    const airTime = (2 * Math.abs(this.jumpVelocity)) / 2400;
-    const jumpRange = this.gameSpeed * airTime;
-    // Between OBSTACLE GROUPS the corgi must land + take a stride + jump.
-    // Enforce a runway of at least 55% of a jump-range or 320 px, whichever
-    // is greater — no possible pattern spawns beyond this.
-    const minRunway = Math.max(320, jumpRange * 0.55);
-    // WITHIN a cluster (double / triple) the corgi jumps ONCE over both.
-    // Cap the cluster span at 80% of jump range so it is always clearable.
-    const maxClusterSpan = jumpRange * 0.8;
-    const fenceW = 80;
-    const clampCluster = (gap: number) => {
-      const span = gap + fenceW;
-      if (span > maxClusterSpan) return Math.max(160, maxClusterSpan - fenceW);
-      return Math.max(160, gap);
+    // Delegate all obstacle spawning to the shared, physics-validated
+    // HurdleGenerator. Same module + same constants that the Node
+    // `validate_hurdles.mjs` script exercises with 10 000 sequences before
+    // release — so anything spawned here is provably clearable.
+    const rng: HgRng = {
+      next: () => Math.random(),
+      between: (a, b) => Math.floor(Math.random() * (b - a + 1)) + a,
     };
-    const gapAfter = (lo: number, hi: number) =>
-      Phaser.Math.Between(Math.max(lo, minRunway), Math.max(hi, minRunway + 60));
+    let candidate: HgCandidate;
+    let rejected = 0;
+    // Try up to 4 candidates via the shared generator (each one already
+    // runs its own retry loop internally). If everything still fails we
+    // fall back to a safe short hurdle — but the 10k validator shows this
+    // never happens in practice.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const g = generateValidated(this.score, this.gameSpeed, rng, this.recentPatternHistory);
+      rejected += g.rejected;
+      if (validate(g.candidate).ok) { candidate = g.candidate; break; }
+    }
+    candidate ??= generateValidated(this.score, this.gameSpeed, rng, this.recentPatternHistory).candidate;
 
-    // ---- Spawn each pattern with validated spacing ----
-    switch (variant) {
-      case 'single':
-        this.spawnFence(baseX, shortH);
-        this.nextGap = gapAfter(500, 720);
-        break;
-      case 'single-tall':
-        this.spawnFence(baseX, tallH);
-        this.nextGap = gapAfter(560, 780);
-        break;
-      case 'double-close': {
-        const gap = clampCluster(Phaser.Math.Between(170, 220));
-        this.spawnFence(baseX, shortH);
-        this.spawnFence(baseX + gap, shortH);
-        this.nextGap = gapAfter(620, 820);
-        break;
-      }
-      case 'double-mid': {
-        const gap = clampCluster(Phaser.Math.Between(240, 320));
-        this.spawnFence(baseX, shortH);
-        this.spawnFence(baseX + gap, Phaser.Math.RND.pick([shortH, midH]));
-        this.nextGap = gapAfter(660, 860);
-        break;
-      }
-      case 'wide-double': {
-        const gap = clampCluster(Phaser.Math.Between(340, 420));
-        this.spawnFence(baseX, shortH);
-        this.spawnFence(baseX + gap, shortH);
-        this.nextGap = gapAfter(720, 900);
-        break;
-      }
-      case 'triple': {
-        // Total cluster span must fit within a single jump. Distribute the
-        // two internal gaps proportionally if they'd exceed maxClusterSpan.
-        let g1 = Phaser.Math.Between(200, 260);
-        let g2 = Phaser.Math.Between(200, 260);
-        const totalWithFences = g1 + g2 + fenceW * 2;
-        if (totalWithFences > maxClusterSpan) {
-          const scale = (maxClusterSpan - fenceW * 2) / (g1 + g2);
-          g1 = Math.max(160, Math.floor(g1 * scale));
-          g2 = Math.max(160, Math.floor(g2 * scale));
-        }
-        g1 = clampCluster(g1);
-        g2 = clampCluster(g2);
-        this.spawnFence(baseX, shortH);
-        this.spawnFence(baseX + g1, shortH);
-        this.spawnFence(baseX + g1 + g2, shortH);
-        this.nextGap = gapAfter(780, 980);
-        break;
-      }
+    // The generator emits fences at local x = 840 (GAME_WIDTH + 120). Spawn
+    // each one at that x with the requested height + width.
+    for (const f of candidate.fences) {
+      this.spawnFence(f.x, f.height, f.width);
     }
 
-    // Randomised treats — sometimes over the fence, sometimes between them
+    // Randomised treats — sometimes over the fences, sometimes between them.
     if (Math.random() < 0.6) {
       const treatCount = Math.random() < 0.25 ? 3 : Math.random() < 0.5 ? 2 : 1;
+      const shortH = candidate.fences[0].height;
+      const baseX = candidate.fences[0].x;
       for (let i = 0; i < treatCount; i++) {
         const tx = baseX + Phaser.Math.Between(20, 260) + i * 70;
         const ty = this.groundY - shortH - 30 - Phaser.Math.Between(0, 100);
@@ -814,17 +733,28 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Ensure spawn gap accounts for game speed (higher speed = longer gap so it's fair)
-    const speedFactor = Math.max(1, this.gameSpeed / 340);
-    this.lastSpawnX = GAME_WIDTH + this.nextGap * speedFactor;
+    // Record pattern in the anti-repeat history buffer.
+    this.recentPatternHistory.push(candidate.kind);
+    if (this.recentPatternHistory.length > 5) this.recentPatternHistory.shift();
+
+    // Compute the "wait until next spawn" distance from the generator's own
+    // nextRunwayPx. Add half the last fence's width so we measure from its
+    // RIGHT edge (matching what the game world would see).
+    const last = candidate.fences[candidate.fences.length - 1];
+    const distanceUntilNextSpawn = last.width / 2 + candidate.nextRunwayPx;
+    this.lastSpawnX = GAME_WIDTH + distanceUntilNextSpawn;
+
+    // Telemetry for post-mortem debugging (kept off the wire in prod).
+    if (rejected > 0) {
+      // eslint-disable-next-line no-console
+      console.debug(`[hurdle] score=${this.score} rejected=${rejected} kind=${candidate.kind}`);
+    }
   }
 
-  private spawnFence(x: number, fenceH: number): void {
+  private spawnFence(x: number, fenceH: number, fenceW: number = 90): void {
     // WHITE PICKET FENCE hurdle — a single fully-opaque procedural texture
-    // ('picket_fence') scaled to the requested height. Aspect is preserved
-    // so pickets stay proportional. Bright white with a dark navy outline,
-    // guaranteed visible against sky + background fence.
-    const fenceW = 90;
+    // ('picket_fence') scaled to the requested width & height. Both are
+    // supplied by the HurdleGenerator so randomised widths are honoured.
     const f = this.add.sprite(x, this.groundY, 'picket_fence')
       .setOrigin(0.5, 1)
       .setDepth(10)

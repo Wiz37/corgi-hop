@@ -112,6 +112,8 @@ export class HUDScene extends Phaser.Scene {
     }
 
     // ---- Wire events from GameScene ----
+    const MILESTONES = new Set([10, 25, 50, 75, 100]);
+    let lastNewBestBannerAt = -1;
     gs.events.on('scoreChanged', (s: number) => {
       this.scoreText.setText(`${s}`);
       this.trophyCurrent.setText(`${s}`);
@@ -119,6 +121,18 @@ export class HUDScene extends Phaser.Scene {
       // Update best label live if surpassed during play
       if (s > gameState.bestScore) {
         this.trophyBest.setText(`BEST: ${s}`);
+        // "New best!" pill — fires ONCE per session when the player passes
+        // their previous record. Non-blocking, does not cover the corgi or
+        // the paw button (positioned at top-third of the screen).
+        if (lastNewBestBannerAt !== s && s === gameState.bestScore + 1) {
+          lastNewBestBannerAt = s;
+          this.showMilestoneBanner('NEW BEST!', 0xffd23c);
+        }
+      }
+      // Score milestones — celebratory particle burst + brief banner.
+      if (MILESTONES.has(s)) {
+        this.showMilestoneBanner(this.milestoneCopy(s), 0x8ee65e);
+        this.spawnMilestoneConfetti();
       }
     });
     gs.events.on('treatsChanged', (t: number) => {
@@ -130,5 +144,76 @@ export class HUDScene extends Phaser.Scene {
       gs.events.off('scoreChanged');
       gs.events.off('treatsChanged');
     });
+  }
+
+  /**
+   * Brief milestone banner shown near the top-third of the screen — non-
+   * blocking, does not pause gameplay, does not cover the corgi or the
+   * paw jump button. Fades in / holds ~700ms / fades out.
+   */
+  private showMilestoneBanner(text: string, tint: number = 0xffd23c): void {
+    const y = 260;
+    const g = this.add.graphics().setDepth(70);
+    const bg = 0x18223a;
+    g.fillStyle(bg, 0.85);
+    g.fillRoundedRect(GAME_WIDTH / 2 - 190, y - 42, 380, 84, 20);
+    g.lineStyle(4, tint, 1);
+    g.strokeRoundedRect(GAME_WIDTH / 2 - 190, y - 42, 380, 84, 20);
+    const label = this.add.text(GAME_WIDTH / 2, y, text, {
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '46px', fontStyle: '900',
+      color: '#ffffff', stroke: '#24304a', strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(71);
+    // Pop in
+    g.setAlpha(0); label.setAlpha(0); label.setScale(0.8);
+    this.tweens.add({ targets: [g, label], alpha: 1, duration: 140 });
+    this.tweens.add({ targets: label, scale: 1, duration: 220, ease: 'Back.easeOut' });
+    // Hold + fade out
+    this.time.delayedCall(900, () => {
+      this.tweens.add({
+        targets: [g, label], alpha: 0, duration: 260,
+        onComplete: () => { g.destroy(); label.destroy(); },
+      });
+    });
+  }
+
+  private milestoneCopy(score: number): string {
+    if (score === 10)  return 'NICE! 10 HOPS';
+    if (score === 25)  return '25 HOPS!';
+    if (score === 50)  return 'HALF CENTURY!';
+    if (score === 75)  return 'ON FIRE!';
+    if (score === 100) return 'LEGENDARY!';
+    return `${score}!`;
+  }
+
+  private spawnMilestoneConfetti(): void {
+    // Small, tasteful confetti burst — sourced from a procedural coloured
+    // square texture. Bursts 24 particles that fall / drift for ~1s and
+    // then destroy themselves.
+    const key = 'milestone_conf';
+    if (!this.textures.exists(key)) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false);
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(0, 0, 8, 12);
+      g.generateTexture(key, 8, 12);
+      g.destroy();
+    }
+    const cx = GAME_WIDTH / 2;
+    const cy = 260;
+    const colours = [0xff8a1a, 0xffd23c, 0x4bb0ff, 0x8ee65e, 0xff77a8];
+    const burst = this.add.particles(0, 0, key, {
+      x: cx, y: cy,
+      speedX: { min: -260, max: 260 },
+      speedY: { min: -300, max: -60 },
+      gravityY: 480,
+      lifespan: 1100,
+      scale: { start: 1, end: 0.6 },
+      alpha: { start: 1, end: 0 },
+      quantity: 24,
+      tint: colours,
+      emitting: false,
+    }).setDepth(69);
+    burst.explode(24, cx, cy);
+    this.time.delayedCall(1400, () => burst.destroy());
   }
 }
