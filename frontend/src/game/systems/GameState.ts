@@ -15,19 +15,48 @@ export type CorgiId =
 export interface CorgiDef {
   id: CorgiId;
   name: string;
-  texture: string; // preload key
-  premium: boolean; // requires an entitlement to own
-  entitlementProducts: string[]; // any of these entitlements unlocks the corgi
-  tint?: number; // fallback tint if texture is missing
+  texture: string;         // preload key for the static portrait (menus / shop)
+  runSheetKey?: string;    // preload key for the 8-frame run sprite sheet
+  runAnimKey?: string;     // Phaser animation key registered in PreloadScene
+  // Frame indices (inside the run sheet) used when the corgi is not running:
+  jumpFrame?: number;      // ascending airborne pose
+  fallFrame?: number;      // descending airborne pose
+  landFrame?: number;      // landing / compressed pose
+  premium: boolean;
+  entitlementProducts: string[];
+  tint?: number;
 }
 
 export const CORGIS: CorgiDef[] = [
-  { id: 'classic',    name: 'Classic Corgi',   texture: 'corgi_idle',      premium: false, entitlementProducts: [] },
-  { id: 'starter',    name: 'Starter Corgi',   texture: 'corgi_starter',   premium: true,  entitlementProducts: ['com.corgihop.starter_pack', 'com.corgihop.all_corgis'] },
-  { id: 'cowboy',     name: 'Cowboy Corgi',    texture: 'corgi_cowboy',    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'superhero',  name: 'Superhero Corgi', texture: 'corgi_superhero', premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'pirate',     name: 'Pirate Corgi',    texture: 'corgi_pirate',    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'astronaut',  name: 'Astronaut Corgi', texture: 'corgi_astronaut', premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  // Classic has its own dedicated jump/fall/land textures (corgi_jump, corgi_fall,
+  // corgi_land). Its runSheetKey points at the approved 8-frame sheet.
+  { id: 'classic',    name: 'Classic Corgi',   texture: 'corgi_idle',
+    runSheetKey: 'corgi_run', runAnimKey: 'run',
+    premium: false, entitlementProducts: [] },
+  // Premium corgis reuse frames of their own run sheet for airborne / landing
+  // poses (we intentionally do not use Classic art on premium skins). Frame
+  // choices below were picked because those poses look most jump-like / most
+  // landing-like within each individual sheet.
+  { id: 'starter',    name: 'Starter Corgi',   texture: 'corgi_starter',
+    runSheetKey: 'starter_run', runAnimKey: 'starter_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true,  entitlementProducts: ['com.corgihop.starter_pack', 'com.corgihop.all_corgis'] },
+  { id: 'cowboy',     name: 'Cowboy Corgi',    texture: 'corgi_cowboy',
+    runSheetKey: 'cowboy_run', runAnimKey: 'cowboy_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'superhero',  name: 'Superhero Corgi', texture: 'corgi_superhero',
+    runSheetKey: 'superhero_run', runAnimKey: 'superhero_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'pirate',     name: 'Pirate Corgi',    texture: 'corgi_pirate',
+    runSheetKey: 'pirate_run', runAnimKey: 'pirate_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'astronaut',  name: 'Astronaut Corgi', texture: 'corgi_astronaut',
+    runSheetKey: 'astronaut_run', runAnimKey: 'astronaut_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true,  entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
 ];
 
 export interface Entitlements {

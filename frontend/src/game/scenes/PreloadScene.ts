@@ -77,7 +77,7 @@ export class PreloadScene extends Phaser.Scene {
     // Cache-bust query string (`?v=…`) forces the browser to fetch the latest
     // repaired PNG whenever the corgi assets are updated — bypasses any stale
     // sprite data cached from earlier gameplay sessions.
-    const V = 'v=20260726b';
+    const V = 'v=20260726c';
     this.load.spritesheet('corgi_run', `/assets/corgi_run_sheet.png?${V}`, {
       frameWidth: 366,
       frameHeight: 352,
@@ -88,7 +88,17 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('corgi_hit',  `/assets/corgi_hit.png?${V}`);
     this.load.image('corgi_idle', `/assets/corgi_idle.png?${V}`);
 
-    // Cosmetic corgis
+    // Premium corgi run sprite sheets — each 2928x352 laid out identically to
+    // Classic's sheet so the same frame-width/height applies. Registered
+    // under distinct texture keys so each corgi has its OWN animation
+    // namespace (no cross-contamination of outfits, no visual substitution).
+    this.load.spritesheet('starter_run',   `/assets/starter_run_sheet.png?${V}`,   { frameWidth: 366, frameHeight: 352 });
+    this.load.spritesheet('cowboy_run',    `/assets/cowboy_run_sheet.png?${V}`,    { frameWidth: 366, frameHeight: 352 });
+    this.load.spritesheet('superhero_run', `/assets/superhero_run_sheet.png?${V}`, { frameWidth: 366, frameHeight: 352 });
+    this.load.spritesheet('pirate_run',    `/assets/pirate_run_sheet.png?${V}`,    { frameWidth: 366, frameHeight: 352 });
+    this.load.spritesheet('astronaut_run', `/assets/astronaut_run_sheet.png?${V}`, { frameWidth: 366, frameHeight: 352 });
+
+    // Cosmetic corgis — static portraits used on menus and shop.
     this.load.image('corgi_cowboy',    `/assets/corgi_cowboy.png?${V}`);
     this.load.image('corgi_pirate',    `/assets/corgi_pirate.png?${V}`);
     this.load.image('corgi_superhero', `/assets/corgi_superhero.png?${V}`);
@@ -118,6 +128,27 @@ export class PreloadScene extends Phaser.Scene {
         frameRate: 14,
         repeat: -1,
       });
+    }
+    // Per-corgi run animations — one animation per premium sheet so each
+    // outfit gets its own namespace. All share Classic's stride cadence
+    // (14 fps default; GameScene retimes msPerFrame each tick based on
+    // gameSpeed via syncRunTiming()).
+    const premiumRuns: Array<[string, string]> = [
+      ['starter_run',   'starter_run'],
+      ['cowboy_run',    'cowboy_run'],
+      ['superhero_run', 'superhero_run'],
+      ['pirate_run',    'pirate_run'],
+      ['astronaut_run', 'astronaut_run'],
+    ];
+    for (const [animKey, texKey] of premiumRuns) {
+      if (!this.anims.exists(animKey) && this.textures.exists(texKey)) {
+        this.anims.create({
+          key: animKey,
+          frames: this.anims.generateFrameNumbers(texKey, { start: 0, end: 7 }),
+          frameRate: 14,
+          repeat: -1,
+        });
+      }
     }
 
     // Procedural fallbacks for any assets that failed to generate.

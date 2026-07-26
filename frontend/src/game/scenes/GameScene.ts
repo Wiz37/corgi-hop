@@ -38,6 +38,11 @@ export class GameScene extends Phaser.Scene {
   // running. Advances proportionally to `currentRunFps` so the bob stays
   // synced to the stride cadence at every game speed.
   private runBobPhase = 0;
+  // Which sheet / animation the currently-selected corgi uses. Captured once
+  // in create() so state transitions in update() never have to look them up
+  // again — and so tests can assert the correct sheet is bound.
+  private runTexKey = 'corgi_run';
+  private runAnimKey = 'run';
   // Distance in world-pixels a single run frame should "cover". Chosen so
   // the corgi's stride cadence feels natural across the full speed range
   // (340 → 760 px/s ⇒ 12–27 fps). Prevents the "ice-skating" effect where
@@ -86,25 +91,35 @@ export class GameScene extends Phaser.Scene {
     // Physics world bounds (leave floor open — we handle ground manually).
     this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    // Corgi
-    // ROOT-CAUSE FIX (bug 4 — selected outfit lost in gameplay):
-    // Previously the run texture was hardcoded to `corgi_run` regardless of
-    // `gameState.selectedCorgi`. That meant premium corgis (cowboy, superhero,
-    // pirate, astronaut, starter) reverted to Classic during runs. Now the
-    // selected corgi's own texture is used — Classic keeps the animated
-    // sprite-sheet, premium corgis use their static outfit art with a
-    // subtle running bounce (approved-artwork fallback rule).
+    // Corgi — resolve the selected corgi and its dedicated run sprite sheet.
+    // Every corgi (Classic + all 5 premium skins) now runs from its OWN
+    // 8-frame sheet loaded in PreloadScene, so the selected outfit stays
+    // visible for the entire run and the leg cycle is baked into the frames.
+    //
+    // No cross-substitution: Classic never uses a premium sheet, and no
+    // premium corgi uses Classic art. Airborne / landing poses for premium
+    // corgis freeze on a specific frame of their OWN sheet (see cd.jumpFrame
+    // / cd.fallFrame / cd.landFrame). Classic uses its dedicated corgi_jump /
+    // corgi_fall / corgi_land pose textures instead.
     const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-    const isClassic = cd.id === 'classic';
-    const runTex = isClassic
-      ? (this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle')
-      : (this.textures.exists(cd.texture) ? cd.texture : (this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle'));
+    // The run sheet KEY (both the texture key and the animation key are
+    // stored on the CorgiDef; both fall back to the classic run if the
+    // premium sheet failed to preload for any reason).
+    const runTexKey  = (cd.runSheetKey && this.textures.exists(cd.runSheetKey))
+      ? cd.runSheetKey
+      : 'corgi_run';
+    const runAnimKey = (cd.runAnimKey && this.anims.exists(cd.runAnimKey))
+      ? cd.runAnimKey
+      : 'run';
+    // Store on the scene so state transitions in update() can reuse them.
+    this.runTexKey = runTexKey;
+    this.runAnimKey = runAnimKey;
     // ROOT-CAUSE FIX (bug 2 — landing rock on start): spawn exactly on the
     // ground so the "wasFalling" branch doesn't trigger on frame 1.
-    this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY, runTex, 0);
+    this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY, runTexKey, 0);
     this.corgi.setDepth(15);        // above foreground foliage
     this.corgi.setAlpha(1);         // guaranteed fully opaque
-    this.corgi.clearTint();         // never tint the classic corgi
+    this.corgi.clearTint();         // never tint the corgi
     this.corgi.setFlipX(false);     // always right-facing — NEVER flipped
     this.corgi.setAngle(0);         // no rotation, ever
     this.corgi.setOrigin(0.5, 1);
@@ -114,8 +129,10 @@ export class GameScene extends Phaser.Scene {
     // outfit) keeps its natural aspect ratio. This is the root fix for the
     // "oversized / vertically stretched" regression.
     this.sizeCorgiUniform();
-    if (isClassic && this.anims.exists('run')) {
-      this.corgi.play('run');
+    // Play the selected corgi's OWN run animation — every corgi now has a
+    // real 8-frame leg cycle rather than a static-slide.
+    if (this.anims.exists(runAnimKey)) {
+      this.corgi.play(runAnimKey);
     }
     // Kick off the physics-safe body-bounce for the running gait. Applies to
     // EVERY corgi so premium outfits also visibly "run" and never look like
@@ -273,10 +290,11 @@ export class GameScene extends Phaser.Scene {
     const fps = Math.max(10, Math.min(30, this.gameSpeed / this.STRIDE_PIX));
     if (Math.abs(fps - this.currentRunFps) < 0.5) return;
     this.currentRunFps = fps;
-    // Classic corgi has the 8-frame sprite-sheet: update its playback rate.
+    // Every corgi (Classic + all 5 premium skins) has its own 8-frame sheet
+    // + registered animation. Retime the current animation's playback rate
+    // so the leg cycle stays locked to the world scroll speed.
     const anim = this.corgi.anims.currentAnim;
-    if (anim && anim.key === 'run') {
-      // msPerFrame is authoritative in Phaser 3 — set both for safety.
+    if (anim && anim.key === this.runAnimKey) {
       const msPerFrame = 1000 / fps;
       this.corgi.anims.msPerFrame = msPerFrame;
     }
@@ -325,28 +343,76 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private setCorgiTexture(key: string, frame: number | string = 0): void {
-    // ROOT-CAUSE FIX (bug 4): route pose swaps through the selected corgi.
-    // Only the Classic corgi has distinct jump/fall/land textures — for
-    // every other outfit we keep the current outfit texture visible so the
-    // hat / cape / helmet / bandana never disappears mid-run.
+  /**
+   * Route pose swaps through the currently-selected corgi. Every corgi has
+   * its OWN run sprite sheet + its OWN jump/fall/land poses (either as
+   * dedicated PNGs for Classic, or as specific frames of its run sheet for
+   * every premium skin). Under NO circumstance is Classic artwork used as a
+   * visual substitute for a premium outfit and vice-versa.
+   *
+   * `logicalPose` is one of the semantic states — 'run' | 'jump' | 'fall' |
+   * 'land' | 'hit'. We map that to a concrete (texture-key, frame-index)
+   * pair based on the selected corgi.
+   */
+  private setPose(logicalPose: 'run' | 'jump' | 'fall' | 'land' | 'hit'): void {
     const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-    let finalKey = key;
-    if (def.id !== 'classic') {
-      // Premium corgi — stay on the outfit texture regardless of pose.
-      finalKey = this.textures.exists(def.texture) ? def.texture : key;
+    let texKey: string;
+    let frame: number = 0;
+    if (def.id === 'classic') {
+      // Classic has dedicated pose textures.
+      switch (logicalPose) {
+        case 'run':  texKey = 'corgi_run';  break;
+        case 'jump': texKey = 'corgi_jump'; break;
+        case 'fall': texKey = 'corgi_fall'; break;
+        case 'land': texKey = 'corgi_land'; break;
+        case 'hit':  texKey = 'corgi_hit';  break;
+      }
+    } else {
+      // Premium corgi — every pose uses THIS corgi's own run sheet so the
+      // outfit (hat, cape, helmet, bandana, collar) is guaranteed to be
+      // visible during every state. Airborne / landing poses freeze on a
+      // per-corgi tuned frame index.
+      texKey = def.runSheetKey!;
+      switch (logicalPose) {
+        case 'run':  frame = 0; break;
+        case 'jump': frame = def.jumpFrame ?? 4; break;
+        case 'fall': frame = def.fallFrame ?? 6; break;
+        case 'land': frame = def.landFrame ?? 0; break;
+        case 'hit':  frame = def.landFrame ?? 0; break;
+      }
     }
-    if (!this.textures.exists(finalKey)) return;
-    // PHYSICAL-JUMP FIX: only re-resize + reset the physics body when the
-    // texture actually changes. Previously setCorgiTexture was called every
-    // frame while airborne, which meant sizeCorgiUniform() (which stops
-    // any active scale tween and rewrites the body) fired every tick —
-    // preventing us from ever playing a "launch pop" tween on the jump.
-    // NOTE: frame index changes within the same spritesheet are handled by
-    // Phaser's Animation system, so we only need to gate on texture key.
-    if (this.corgi.texture && this.corgi.texture.key === finalKey) return;
-    this.corgi.setTexture(finalKey, frame);
-    // Uniform sizing keeps the natural aspect ratio of every pose.
+    // Fallback if the resolved texture isn't loaded (should never happen in
+    // production but keeps us safe).
+    if (!this.textures.exists(texKey)) return;
+    // Guard against redundant per-frame calls (this prevents sizeCorgiUniform
+    // from stopping every launch-pop tween on the first ascend frame).
+    const sameTex = this.corgi.texture && this.corgi.texture.key === texKey;
+    const currentFrameName = this.corgi.frame?.name;
+    const sameFrame = String(frame) === String(currentFrameName);
+    if (sameTex && sameFrame) return;
+    this.corgi.setTexture(texKey, frame);
+    this.sizeCorgiUniform();
+    this.corgi.setAlpha(1);
+    this.corgi.setFlipX(false);
+    this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
+    this.corgi.clearTint();
+  }
+
+  /**
+   * @deprecated Legacy pose setter — kept only for external callers that
+   * hardcode Classic texture keys. New code should use `setPose()`.
+   */
+  private setCorgiTexture(key: string, frame: number | string = 0): void {
+    // Route to setPose based on the classic key mapping.
+    if (key === 'corgi_run')  { this.setPose('run');  return; }
+    if (key === 'corgi_jump') { this.setPose('jump'); return; }
+    if (key === 'corgi_fall') { this.setPose('fall'); return; }
+    if (key === 'corgi_land') { this.setPose('land'); return; }
+    if (key === 'corgi_hit')  { this.setPose('hit');  return; }
+    // Unknown legacy key — best-effort direct swap.
+    if (!this.textures.exists(key)) return;
+    if (this.corgi.texture && this.corgi.texture.key === key) return;
+    this.corgi.setTexture(key, frame);
     this.sizeCorgiUniform();
     this.corgi.setAlpha(1);
     this.corgi.setFlipX(false);
@@ -391,7 +457,7 @@ export class GameScene extends Phaser.Scene {
       this.coyoteUntil = 0;
       gameState.totalJumps += 1;
       gameState.saveTotals();
-      this.setCorgiTexture('corgi_jump');
+      this.setPose('jump');
       this.corgi.anims.stop();
       // PHYSICAL-JUMP POLISH — Emit a one-shot "launch pop" tween that
       // squash-stretches the sprite briefly on takeoff. Purely visual: the
@@ -533,21 +599,20 @@ export class GameScene extends Phaser.Scene {
       if (wasFalling) {
         body.setVelocityY(0);
         this.coyoteUntil = time + this.COYOTE_MS;
-        // Landing squash — swap texture and hold briefly. NO yoyo tween on
-        // displayHeight anymore (that was the source of the rocking).
-        this.setCorgiTexture('corgi_land');
+        // Landing squash — swap to the per-corgi land pose (Classic uses
+        // corgi_land.png; premium corgis freeze on their `landFrame` of
+        // their own run sheet so the outfit stays visible).
+        this.setPose('land');
         this.corgi.anims.stop();
         this.stopRunBounce();   // squash pose — no bounce while landing
-        const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-        const isClassic = def.id === 'classic';
         this.time.delayedCall(90, () => {
           if (!this.ended) {
-            if (isClassic && this.anims.exists('run')) {
-              this.setCorgiTexture('corgi_run', 0);
-              this.corgi.play('run');
-            } else if (!isClassic) {
-              // Premium: keep showing outfit texture
-              this.setCorgiTexture(def.texture);
+            // Return to the SELECTED corgi's OWN run animation (per-corgi
+            // namespace: run / starter_run / cowboy_run / superhero_run /
+            // pirate_run / astronaut_run).
+            this.setPose('run');
+            if (this.anims.exists(this.runAnimKey)) {
+              this.corgi.play(this.runAnimKey);
             }
             // Restart the physics-safe body-bounce for the run.
             this.startRunBounce();
@@ -556,12 +621,10 @@ export class GameScene extends Phaser.Scene {
       } else {
         body.setVelocityY(0);
         // On ground with negligible velocity → stay in run state.
-        const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-        const isClassic = def.id === 'classic';
-        if (isClassic && this.corgi.anims.currentAnim?.key !== 'run' && !this.ended) {
-          if (this.anims.exists('run')) {
-            this.setCorgiTexture('corgi_run', 0);
-            this.corgi.play('run');
+        if (this.corgi.anims.currentAnim?.key !== this.runAnimKey && !this.ended) {
+          if (this.anims.exists(this.runAnimKey)) {
+            this.setPose('run');
+            this.corgi.play(this.runAnimKey);
           }
         }
         // Make sure the body-bounce is running whenever we are grounded and
@@ -580,22 +643,22 @@ export class GameScene extends Phaser.Scene {
         this.runBobPhase += dt * this.currentRunFps * (Math.PI * 2 / 4);
       }
     } else {
-      // Airborne — swap to jump/fall texture (NO angle tween, NO rotation).
+      // Airborne — swap to jump/fall pose (NO angle tween, NO rotation).
       const vy = (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y;
-      const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-      const isClassic = def.id === 'classic';
       // Body-bounce must not run while airborne — stops the scaleY yoyo
       // interfering with the natural jump/fall silhouette.
       if (this.runBounceTween && this.runBounceTween.isPlaying()) {
         this.stopRunBounce();
       }
       if (vy < 0) {
-        // Ascending
-        this.setCorgiTexture(isClassic ? 'corgi_jump' : def.texture);
+        // Ascending — every corgi shows its own jump pose (Classic uses the
+        // corgi_jump texture; premium corgis freeze on their tuned jumpFrame
+        // of their own run sheet so the hat/cape/helmet stays visible).
+        this.setPose('jump');
         this.corgi.anims.stop();
       } else if (vy > 0) {
-        // Descending
-        this.setCorgiTexture(isClassic ? 'corgi_fall' : def.texture);
+        // Descending — same idea for fall pose.
+        this.setPose('fall');
         this.corgi.anims.stop();
       }
     }
@@ -832,7 +895,7 @@ export class GameScene extends Phaser.Scene {
     this.ended = true;
     this.stopRunBounce();      // no more scaleY oscillation after death
     this.cameras.main.shake(220, 0.012);
-    this.setCorgiTexture('corgi_hit');
+    this.setPose('hit');
     this.corgi.anims.stop();
     this.corgi.setAngle(0);
     this.corgi.setFlipX(false);
@@ -871,7 +934,7 @@ export class GameScene extends Phaser.Scene {
     this.corgi.y = this.groundY - 40;
     (this.corgi.body as Phaser.Physics.Arcade.Body).setVelocityY(-700);
     this.invulnerableUntil = this.time.now + 2000;
-    if (this.anims.exists('run')) { this.setCorgiTexture('corgi_run', 0); this.corgi.play('run'); }
+    if (this.anims.exists(this.runAnimKey)) { this.setPose('run'); this.corgi.play(this.runAnimKey); }
     this.scene.resume();
     this.flashShieldEffect();
   }
