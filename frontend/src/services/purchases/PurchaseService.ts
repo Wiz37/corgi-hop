@@ -1,12 +1,22 @@
 // PurchaseService — cross-platform façade for RevenueCat entitlements.
 //
+// SDK pin: `@revenuecat/purchases-capacitor` is PINNED at 9.2.2 to match
+// Capacitor 6 (peer `@capacitor/core: ^6.0.0`). Do NOT bump above 9.x without
+// upgrading Capacitor first — v10+ requires Capacitor >=7 and v13+ requires
+// Capacitor >=8.
+//
 // Browser preview (isNative=false): MOCK. Products are hard-coded with clearly-
 // labelled *test* prices ("Available in the iPhone and Android app"). "Buying"
 // simulates the store dialog and, if confirmed, grants the entitlement locally.
 // The mock ALSO exposes the failure / cancel / offline states so ShopScene can
 // exercise its UI states end-to-end.
 //
-// Native (Capacitor): swap in real `@revenuecat/purchases-capacitor` calls.
+// Native (Capacitor): real `@revenuecat/purchases-capacitor@9.2.2` calls.
+//   • iOS  → Apple StoreKit Sandbox  (App Store In-App Purchase Key required on
+//                                     the RevenueCat dashboard BEFORE testing.)
+//   • Android → Google Play Internal Testing (billing test cards).
+//   Native builds NEVER simulate a purchase — the mock path is unreachable when
+//   `Capacitor.isNativePlatform()` returns true.
 // Product IDs, public SDK keys, and prices all come from the store (never
 // hard-coded in the source).
 
@@ -95,12 +105,17 @@ async function loadRC(): Promise<any> {
 }
 
 function rcApiKey(): string {
+  // Platform-specific PUBLIC SDK keys ONLY (never a REST secret). If the
+  // per-platform key is missing on a native build, we intentionally return an
+  // empty string — the SDK stays uninitialised and native calls no-op until a
+  // real key is supplied. There is NO "test-store" fallback: sandbox
+  // purchases on iOS require the App Store In-App Purchase Key on the
+  // RevenueCat dashboard, and Android sandbox purchases require a signed
+  // Play-Internal build.
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const iosKey = String(import.meta.env.VITE_REVENUECAT_IOS_PUBLIC_KEY ?? '');
   const androidKey = String(import.meta.env.VITE_REVENUECAT_ANDROID_PUBLIC_KEY ?? '');
-  const testKey = String(import.meta.env.VITE_REVENUECAT_TEST_PUBLIC_KEY ?? '');
-  const key = isIOS ? iosKey : androidKey;
-  return key || testKey; // fall back to test-store key if platform key missing
+  return isIOS ? iosKey : androidKey;
 }
 
 export class PurchaseService {
@@ -203,11 +218,10 @@ export class PurchaseService {
     // Anti double-charge: if the same product is already being purchased,
     // don't fire the flow again.
     if (this.purchaseInFlight.has(id)) return { kind: 'unavailable' };
-    // For non-consumables, block if already owned.
-    if (id !== 'com.corgihop.bone_bundle_small'
-     && id !== 'com.corgihop.bone_bundle_medium'
-     && id !== 'com.corgihop.bone_bundle_large'
-     && this.hasEntitlement(id)) {
+    // All current products are non-consumable — block if already owned.
+    // (Consumable "bone_bundle_*" SKUs are not in ProductId; if reintroduced,
+    // exclude them here before the ownership check.)
+    if (this.hasEntitlement(id)) {
       return { kind: 'failed', message: 'Already owned.' };
     }
     this.purchaseInFlight.add(id);
