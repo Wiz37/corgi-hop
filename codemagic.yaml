@@ -310,6 +310,15 @@ workflows:
         # only after full store listing + review is ready.
         submit_to_app_store: false
 
+        # Explicit IPA path — the "Locate generated IPA + stage it at the
+        # artifact glob path" step above guarantees the file lands at
+        # $CM_BUILD_DIR/frontend/build/ios/ipa/App.ipa. Codemagic's
+        # publisher previously logged 'no IPAs or PKGs found' because its
+        # artifact scanner did not see the file even though it was
+        # collected by the artifacts glob; pointing directly at the path
+        # bypasses that discovery step.
+        ipa_path: frontend/build/ios/ipa/App.ipa
+
         # Do NOT list beta_groups until at least one internal-testing
         # group actually exists in App Store Connect for com.corgihop.game.
         # Codemagic rejects the upload if a group name doesn't resolve, and
