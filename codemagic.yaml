@@ -1,0 +1,253 @@
+# ==========================================================================
+# Corgi Hop — Codemagic iOS TestFlight workflow
+# ==========================================================================
+#
+# What this does:
+#   1. Runs on a Codemagic Apple-Silicon macOS instance with Xcode 26.
+#   2. Installs Node/Yarn/CocoaPods versions compatible with the existing
+#      yarn.lock (Node 20, Yarn 1.22, Ruby 3.2 for pods).
+#   3. Installs the Phaser + Vite + Capacitor 6 web bundle from `frontend/`
+#      (yarn --frozen-lockfile, tsc --noEmit, `yarn vite build`).
+#   4. Copies the built dist/ into the iOS project (`npx cap sync ios`) and
+#      installs the CocoaPods.
+#   5. Fetches automatic App Store distribution certs + provisioning
+#      profiles from the "Corgi Hop Apple" App Store Connect integration.
+#   6. Archives, exports, uploads to App Store Connect / TestFlight
+#      (internal testers only — no automatic public release).
+#   7. Auto-increments the build number using the latest TestFlight number.
+#
+# What this DOES NOT do:
+#   • Never converts the project to Expo / RN / Ionic — this is the Phaser +
+#     Vite + Capacitor 6 stack, untouched.
+#   • Never commits Apple certificates, .p8 keys, provisioning profiles,
+#     RevenueCat secret REST keys, or any passwords — every secret comes
+#     from the Codemagic App Store Connect integration + the two secret
+#     groups referenced below.
+#   • Never touches gameplay, corgi assets, hurdle generator, Bone economy,
+#     or monetization behaviour.
+#
+# Prerequisites in the Codemagic UI (one-time, per your instructions):
+#   1. Teams → Integrations → App Store Connect → add integration
+#      named **exactly** "Corgi Hop Apple" pointing at your issuer ID +
+#      key ID + .p8 file for the com.corgihop.game app.
+#   2. Teams → Environment variables → create secret group
+#      **corgi_hop_ios_public_keys** containing (all marked secret):
+#        VITE_REVENUECAT_IOS_PUBLIC_KEY
+#        VITE_ADMOB_IOS_APP_ID
+#        VITE_ADMOB_IOS_REWARDED_ID
+#        VITE_ADMOB_IOS_INTERSTITIAL_ID
+#      For the first TestFlight build, leave AdMob values EMPTY so the
+#      runtime falls back to Google's official demo ad-unit IDs.
+#   3. Teams → Environment variables → create secret group
+#      **corgi_hop_public_urls** containing (marked secret is fine, they
+#      end up in the bundle):
+#        PRIVACY_POLICY_URL
+#        TERMS_URL
+#        SUPPORT_URL
+#   4. Test-flight tester group: create one in App Store Connect and put
+#      its exact name into the `submit_to_testflight` block below (default
+#      here is "Internal QA" — rename if you use a different one).
+# ==========================================================================
+
+workflows:
+  ios-testflight:
+    name: Corgi Hop — iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2   # Apple-Silicon Codemagic runner
+    working_directory: frontend
+    environment:
+      xcode: 26.6                # any accepted 26.x tag — Codemagic picks
+                                 # the latest patch if the exact minor is
+                                 # temporarily unavailable
+      node: 20.20.2              # matches this workspace's node --version
+      cocoapods: default         # tracks the Podfile's declared pod repo
+      groups:
+        - corgi_hop_ios_public_keys   # RC + AdMob public identifiers
+        - corgi_hop_public_urls       # legal / support URLs
+      vars:
+        APP_STORE_APPLE_ID: 0    # replaced by the integration below
+        BUNDLE_ID: com.corgihop.game
+        XCODE_WORKSPACE: ios/App/App.xcworkspace
+        XCODE_SCHEME: App
+        XCODE_CONFIG: Release
+        MARKETING_VERSION: 1.0.0
+      integrations:
+        # This name MUST match the App Store Connect integration you create
+        # in Codemagic → Teams → Integrations.
+        app_store_connect: Corgi Hop Apple
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.corgihop.game
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
+
+    scripts:
+      # -------------------------------------------------------------------
+      - name: Enable Corepack + verify Node/Yarn versions
+        script: |
+          set -eux
+          corepack enable || true
+          node --version
+          yarn --version
+          echo "sw_vers:"
+          sw_vers
+          echo "xcodebuild -version:"
+          xcodebuild -version
+
+      # -------------------------------------------------------------------
+      - name: Install JS dependencies (frozen lockfile)
+        script: |
+          set -eux
+          yarn install --frozen-lockfile
+          # The postinstall hook reapplies the two required node_modules
+          # patches (Capacitor CLI tar-v7 shim + expo→Vite shim).
+
+      # -------------------------------------------------------------------
+      - name: Type-check with TypeScript
+        script: |
+          set -eux
+          npx tsc --noEmit
+
+      # -------------------------------------------------------------------
+      - name: Materialise .env from Codemagic secrets
+        # Never committed — created just-in-time on the runner and read by
+        # Vite via import.meta.env at build time.
+        script: |
+          set -eux
+          cat > .env <<EOF
+          VITE_APP_ENV=production
+          VITE_ENABLE_PRODUCTION_MONETIZATION=false
+          VITE_SHOW_TEST_ADS_LABEL=true
+          VITE_USE_AD_TEST_IDS=true
+
+          VITE_REVENUECAT_IOS_PUBLIC_KEY=${VITE_REVENUECAT_IOS_PUBLIC_KEY:-}
+          VITE_REVENUECAT_ANDROID_PUBLIC_KEY=
+
+          # For the first TestFlight build we keep AdMob in test mode:
+          # empty App/Ad-Unit IDs → runtime falls back to Google's official
+          # demo ad-unit IDs (see src/services/ads/AdService.ts).
+          VITE_ADMOB_IOS_APP_ID=${VITE_ADMOB_IOS_APP_ID:-}
+          VITE_ADMOB_ANDROID_APP_ID=
+          VITE_ADMOB_IOS_REWARDED_ID=${VITE_ADMOB_IOS_REWARDED_ID:-}
+          VITE_ADMOB_ANDROID_REWARDED_ID=
+          VITE_ADMOB_IOS_INTERSTITIAL_ID=${VITE_ADMOB_IOS_INTERSTITIAL_ID:-}
+          VITE_ADMOB_ANDROID_INTERSTITIAL_ID=
+
+          VITE_PRODUCT_REMOVE_ADS=com.corgihop.remove_ads
+          VITE_PRODUCT_STARTER_PACK=com.corgihop.starter_pack
+          VITE_PRODUCT_PREMIUM_CORGIS=com.corgihop.premium_corgis
+          VITE_PRODUCT_ALL_CORGIS=com.corgihop.all_corgis
+
+          VITE_PRIVACY_POLICY_URL=${PRIVACY_POLICY_URL:-}
+          VITE_TERMS_URL=${TERMS_URL:-}
+          VITE_SUPPORT_URL=${SUPPORT_URL:-}
+          EOF
+
+      # -------------------------------------------------------------------
+      - name: Build the Vite production bundle
+        script: |
+          set -eux
+          yarn vite build
+          test -s dist/index.html
+          echo "dist/ ready:"
+          ls -lh dist/
+
+      # -------------------------------------------------------------------
+      - name: Sync web bundle into iOS Capacitor project
+        script: |
+          set -eux
+          npx cap sync ios
+          # Confirm both native plugins + the app lifecycle plugin are
+          # registered — used by AdService, PurchaseService, and the
+          # background-pause handler in src/main.ts.
+          npx cap ls ios
+
+      # -------------------------------------------------------------------
+      - name: Install CocoaPods
+        script: |
+          set -eux
+          cd ios/App
+          # M-chip Xcode 26 ships CocoaPods 1.16+; only bootstrap if the
+          # workspace pods haven't been resolved yet.
+          if [ ! -f Podfile.lock ]; then
+            pod install --repo-update
+          else
+            pod install
+          fi
+
+      # -------------------------------------------------------------------
+      - name: Set marketing version + auto-increment TestFlight build no.
+        script: |
+          set -eux
+          NEXT_BUILD=$(app-store-connect get-latest-testflight-build-number \
+            "$BUNDLE_ID" --platform IOS 2>/dev/null | tr -d 'a-zA-Z ' || echo "0")
+          NEXT_BUILD=$((NEXT_BUILD + 1))
+          echo "Next TestFlight build number: $NEXT_BUILD"
+          agvtool new-version -all "$NEXT_BUILD"           2>&1 | tail -5
+          agvtool new-marketing-version "$MARKETING_VERSION" 2>&1 | tail -5
+        working_directory: frontend/ios/App
+
+      # -------------------------------------------------------------------
+      - name: Fetch signing certificates + provisioning profiles
+        script: |
+          set -eux
+          # Codemagic's built-in signing helper reads the App Store Connect
+          # integration `Corgi Hop Apple` and pulls the matching iOS
+          # distribution cert + a profile scoped to com.corgihop.game.
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+              --type IOS_APP_STORE \
+              --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      # -------------------------------------------------------------------
+      - name: Archive + export signed IPA
+        script: |
+          set -eux
+          xcode-project build-ipa \
+            --workspace       "$XCODE_WORKSPACE" \
+            --scheme          "$XCODE_SCHEME" \
+            --config          "$XCODE_CONFIG" \
+            --archive-flags   "-destination 'generic/platform=iOS'"
+
+    artifacts:
+      - frontend/ios/App/build/ios/ipa/*.ipa
+      - frontend/ios/App/build/ios/xcarchive/*.xcarchive
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - frontend/ios/App/**/*.dSYM.zip
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        # Uses the same "Corgi Hop Apple" integration referenced above.
+        # No .p8 / issuer ID / private-key material lives in this file.
+        auth: integration
+        submit_to_testflight: true
+
+        # Public App Store submission is intentionally DISABLED.
+        # Flip `submit_to_app_store: true` and add the release info block
+        # only after full store listing + review is ready.
+        submit_to_app_store: false
+
+        # TestFlight internal beta tester group — must exist in App Store
+        # Connect BEFORE the first successful upload. Rename if your
+        # internal group has a different name.
+        beta_groups:
+          - Internal QA
+
+      email:
+        # Notified on both success + failure so the pipeline is
+        # observable end-to-end. Recipients are inherited from the
+        # Codemagic team settings; edit here if you need overrides.
+        recipients: []
+        notify:
+          success: true
+          failure: true
