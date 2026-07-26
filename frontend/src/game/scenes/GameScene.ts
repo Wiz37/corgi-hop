@@ -87,15 +87,18 @@ export class GameScene extends Phaser.Scene {
     this.corgi.setFlipX(false);     // always right-facing — NEVER flipped
     this.corgi.setAngle(0);         // no rotation, ever
     this.corgi.setOrigin(0.5, 1);
-    this.corgi.setDisplaySize(190, 180);
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
+    // Uniform scaling — target a display HEIGHT and let width scale naturally
+    // so every texture (run sheet, jump, fall, land, hit, and every premium
+    // outfit) keeps its natural aspect ratio. This is the root fix for the
+    // "oversized / vertically stretched" regression.
+    this.sizeCorgiUniform();
     if (isClassic && this.anims.exists('run')) {
       this.corgi.play('run');
     }
-    // NOTE: no bounce tween on `y` — that would fight arcade-physics gravity
-    // and prevent jumps for premium corgis. The subtle running bounce for
-    // premium outfits is applied as a scaleY oscillation in `update()` only
-    // while the corgi is on the ground. See `applyRunBounce()`.
+    // NOTE: no y-tween or scaleY oscillation. For premium corgis the static
+    // outfit remains stable and right-facing — a stable natural-looking
+    // corgi is preferable to a fragile fake-run trick.
     // Collision box in physics body units — since arcade physics bodies are
     // sized in *source texture* units, compute from the source dimensions so the
     // hitbox stays consistent regardless of displaySize.
@@ -161,6 +164,35 @@ export class GameScene extends Phaser.Scene {
     return key;
   }
 
+  /**
+   * Uniform-scale sizing for the corgi sprite. Chooses ONE scale value based
+   * on the target visible height (~160 px at 720x1280 design res) and
+   * applies it as `setScale(s, s)`. This preserves the natural aspect ratio
+   * of every source texture — no more independent width/height stretching.
+   *
+   * Also re-fits the arcade-physics body to match the visible dog so
+   * collisions stay accurate as the texture changes between run / jump /
+   * fall / land / hit poses.
+   */
+  private sizeCorgiUniform(): void {
+    const TARGET_H = 160; // approved gameplay height
+    const src = this.corgi.frame?.height ?? this.corgi.height;
+    if (!src) return;
+    const s = TARGET_H / src;
+    this.corgi.setScale(s, s);
+    // Physics body — inset by ~15% on each side so the hit-box hugs the dog
+    // rather than the whole transparent bounding rectangle.
+    const body = this.corgi.body as Phaser.Physics.Arcade.Body | undefined;
+    if (body) {
+      const w = this.corgi.width;
+      const h = this.corgi.height;
+      const bw = w * 0.7;
+      const bh = h * 0.85;
+      body.setSize(bw, bh, false);
+      body.setOffset((w - bw) / 2, h - bh);
+    }
+  }
+
   private setCorgiTexture(key: string, frame: number | string = 0): void {
     // ROOT-CAUSE FIX (bug 4): route pose swaps through the selected corgi.
     // Only the Classic corgi has distinct jump/fall/land textures — for
@@ -174,8 +206,8 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.textures.exists(finalKey)) return;
     this.corgi.setTexture(finalKey, frame);
-    // Defensive resets: opacity + orientation + display size never drift.
-    this.corgi.setDisplaySize(190, 180);
+    // Uniform sizing keeps the natural aspect ratio of every pose.
+    this.sizeCorgiUniform();
     this.corgi.setAlpha(1);
     this.corgi.setFlipX(false);
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
@@ -218,27 +250,6 @@ export class GameScene extends Phaser.Scene {
     this.layers.grass.tilePositionX      += PARALLAX_SPEEDS.grass * dt * spd;
     this.layers.path.tilePositionX       += this.gameSpeed * dt;
     this.layers.foreground.tilePositionX += this.gameSpeed * dt * 1.15;
-
-    // ---- Subtle running bounce for PREMIUM corgis (physics-safe) ----
-    // Classic uses the animated sprite-sheet, so it doesn't need a fake
-    // bounce. Premium outfits are static PNGs — a scaleY oscillation ONLY
-    // while the corgi is grounded provides a "trotting" feel without ever
-    // fighting arcade physics on Y.
-    {
-      const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-      const isPremium = def.id !== 'classic';
-      const onGround = this.corgi.y >= this.groundY - 1
-                    && (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y === 0;
-      if (isPremium && onGround && !this.ended) {
-        // Two oscillations per second — subtle 1-2 px vertical bob via scaleY.
-        const t = time / 1000;
-        const bob = Math.sin(t * 12) * 0.02; // ±2% scaleY
-        this.corgi.setScale(this.corgi.scaleX, Math.max(0.94, 1 + bob));
-      } else if (isPremium) {
-        // Reset to normal scaleY while airborne / after death.
-        this.corgi.setScale(this.corgi.scaleX, 1);
-      }
-    }
 
     // Move obstacles + treats
     const dx = this.gameSpeed * dt;
