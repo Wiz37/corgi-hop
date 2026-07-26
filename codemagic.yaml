@@ -18,6 +18,7 @@ workflows:
 
       vars:
         BUNDLE_ID: com.corgihop.game
+        APP_STORE_APPLE_ID: "6794865915"
         XCODE_WORKSPACE: ios/App/App.xcworkspace
         XCODE_SCHEME: App
         XCODE_CONFIG: Release
@@ -114,7 +115,64 @@ workflows:
           cd "$CM_BUILD_DIR/frontend/ios/App"
           pod install
 
+      - name: Apply App Store signing profile
+
+Paste this in its place:
+
       - name: Set version and next TestFlight build number
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/frontend/ios/App"
+
+          LATEST_BUILD_NUMBER="$(
+            app-store-connect get-latest-testflight-build-number \
+              "$APP_STORE_APPLE_ID" \
+              --platform IOS \
+              --app-store-version "$MARKETING_VERSION"
+          )"
+
+          if ! [[ "$LATEST_BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: Invalid TestFlight build number: $LATEST_BUILD_NUMBER"
+            exit 1
+          fi
+
+          NEXT_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+
+          echo "Latest TestFlight build: $LATEST_BUILD_NUMBER"
+          echo "New TestFlight build: $NEXT_BUILD_NUMBER"
+          echo "Marketing version: $MARKETING_VERSION"
+
+          agvtool new-marketing-version "$MARKETING_VERSION"
+          agvtool new-version -all "$NEXT_BUILD_NUMBER"
+
+          echo "Confirmed project build number:"
+          agvtool what-version
+Codemagic requires the numeric Application Apple ID when retrieving the latest TestFlight build number. It then increments that number before running agvtool.
+
+3. Commit it
+
+Click Commit changes…
+
+Use:
+
+Fix automatic TestFlight build numbering
+
+Choose Commit directly to the main branch, then click the green Commit changes button.
+
+4. Run Codemagic
+
+Start another Corgi Hop — iOS TestFlight build.
+
+In the build-number step, it should show:
+
+Latest TestFlight build: 1
+New TestFlight build: 2
+
+Then App Store Connect should receive:
+
+Version 1.0.0 (2)
+
+Do not modify the sound files, AppDelegate.swift, or the IPA setup again.
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR/frontend/ios/App"
