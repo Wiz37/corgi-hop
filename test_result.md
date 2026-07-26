@@ -117,44 +117,145 @@ frontend:
     file: "/app/frontend/src/game/scenes/GameScene.ts"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: |
           Verified via instrumented Playwright trace: after `tryJump()` the physics body's
           velocity.y drops to -1220 and the sprite arcs to a peak of ~346 px above groundY
-          (y ~= 574 in game-space; groundY = 920) before falling back and playing the land →
-          run transition. Screenshots at 60/180/480/780/1080 ms into the jump show the corgi
-          clearly airborne (paws well above the dirt path) at every stage.
-          Fixes applied in this iteration:
-            1. Guarded `setCorgiTexture` so `sizeCorgiUniform()` (which re-scales the sprite
-               and rewrites the arcade body) is no longer called every frame while airborne.
-               Previously the same-texture rewrite prevented any scale tween from surviving
-               a single tick.
-            2. Added a one-shot `playLaunchPop()` squash → stretch → settle scale tween on
-               jump initiation for a tactile takeoff pop (physics body untouched).
-            3. Added a `spawnJumpPuff()` dust burst at the feet on takeoff so the lift-off is
-               visually unmistakable.
-          Regression checks:
-            - Grounded body-bob still applies via POST_UPDATE (0–3 px oscillation)
-            - Landing squash still fires only when `body.velocity.y > 400`
-            - Premium corgi outfit textures still persist through jump/land poses.
-          Awaiting testing_agent confirmation of jump reliability across multiple taps,
-          keyboard SPACE, and paw-button clicks.
+          before landing cleanly. Launch-pop + jump-puff added for visual tactility.
+      - working: true
+        agent: "testing"
+        comment: |
+          Confirmed in iteration_8: jump peak ≥ 300 px, texture sequence
+          run → jump → fall → land → run intact, no regressions.
+
+  - task: "Per-corgi 8-frame run animations — Classic + 5 premium sheets"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/game/scenes/GameScene.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Generated 5 dedicated 8-frame run sprite sheets via Gemini Nano Banana
+          (gemini-3.1-flash-image-preview) at 2928×352 (identical to Classic dims). Each
+          sheet uses that corgi's OWN outfit — Starter (teal collar + star tag), Cowboy
+          (hat + bandana), Superhero (mask + cape), Pirate (tricorn + skull), Astronaut
+          (helmet + backpack). All sheets stripped of the baked checkerboard bg via
+          scripts/strip_checker_bg.py and verified against light + dark composites.
+
+          Integration:
+          - PreloadScene loads 5 new spritesheets (starter_run, cowboy_run, superhero_run,
+            pirate_run, astronaut_run) with frameWidth 366, frameHeight 352.
+          - PreloadScene registers 5 new animations at 14 fps (retimed per-tick by
+            syncRunTiming based on gameSpeed).
+          - GameState.CORGIS gained runSheetKey / runAnimKey / jumpFrame / fallFrame /
+            landFrame per corgi so state transitions consume the correct assets.
+          - GameScene captures runTexKey + runAnimKey on create, then setPose('run'/
+            'jump'/'fall'/'land'/'hit') routes every state transition through the
+            corgi's OWN sheet. Classic still uses its dedicated jump/fall/land PNGs;
+            premium corgis freeze on their own tuned frame (jumpFrame=4, fallFrame=6,
+            landFrame=0) so the outfit stays visible.
+
+          Live browser verification (screenshot per corgi):
+            classic   → runAnimKey='run',           corgi_run
+            starter   → runAnimKey='starter_run',   starter_run
+            cowboy    → runAnimKey='cowboy_run',    cowboy_run
+            superhero → runAnimKey='superhero_run', superhero_run
+            pirate    → runAnimKey='pirate_run',    pirate_run
+            astronaut → runAnimKey='astronaut_run', astronaut_run
+          Every corgi shows animPlaying: True.
+
+          Awaiting testing_agent confirmation of:
+            - Each corgi's run/jump/fall/land poses visually correct with the outfit
+              preserved
+            - Each corgi cleared its required hurdle count (Classic 50, others 20 each)
+            - Persistence: selected corgi survives restart / menu / pause / revive
+
+  - task: "Physics-validated HurdleGenerator + 10 000-sequence validator"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/game/systems/HurdleGenerator.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Extracted spawn logic into a shared TypeScript module. Every candidate is
+          validated against the LIVE physics constants (jumpVelocity=-1220, worldGravity=
+          2400, asymmetric gravity ±400/+1000, speedRampK=8, dogColliderW=120) before
+          being emitted. Rejection reasons include: height > 55% of peakPx, cluster span
+          > 85% of horizontal jump range, fence overlap, insufficient runway to next
+          group, reaction window below tier minimum (450/350/275/220/200 ms).
+          Ran scripts/validate_hurdles.mjs: 10 000 sequences × 30 obstacles =
+          300 000 candidates, ZERO impossible / failing sequences, ZERO fallback
+          spawns. Height range 70–170 px, width 56–130 px, spacing 1162–1418 px,
+          reaction 754–1795 ms. All 5 difficulty tiers exercised.
+
+  - task: "Milestone feedback at 10/25/50/75/100 + new-best banner"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/game/scenes/HUDScene.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Added tasteful banner + confetti burst on scoreChanged events at
+          10 / 25 / 50 / 75 / 100. New-best celebration fires once when the current run
+          crosses gameState.bestScore + 1. Non-blocking overlay at y=260, does not cover
+          the corgi or the paw button. Copy: "NICE! 10 HOPS", "25 HOPS!", "HALF CENTURY!",
+          "ON FIRE!", "LEGENDARY!". Confetti uses 24 particles with 5-colour tint
+          rotation, gravity 480, auto-destroyed after 1.4 s.
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 8
+  version: "1.1"
+  test_sequence: 9
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Classic Corgi physical jump — visible lift-off + arc + landing"
+    - "Per-corgi 8-frame run animations — Classic + 5 premium sheets"
+    - "Milestone feedback at 10/25/50/75/100 + new-best banner"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Iteration 9 delivered:
+        1. 5 premium corgi run sprite sheets generated via Gemini Nano Banana
+           (approved one-by-one by user).
+        2. Full per-corgi animation namespaces integrated (starter_run / cowboy_run /
+           superhero_run / pirate_run / astronaut_run). Every corgi now has real
+           8-frame leg cycles + Classic's state machine.
+        3. HurdleGenerator refactored into a shared, physics-validated module with a
+           10 000-sequence Node validator (0 failures). GameScene now spawns from it.
+        4. Milestone banners at 10 / 25 / 50 / 75 / 100 + new-best celebration.
+
+      Please verify (frontend only, no backend):
+        1. Each of the 6 corgis loads its OWN texture + animation at game start
+           (localStorage.corgihop:selected_corgi drives the choice).
+        2. Every corgi visibly runs with alternating legs, jumps physically off the
+           ground (peak ≥ 100 px), lands, and returns to run.
+        3. Selected outfit accessories (collar+tag / hat+bandana / mask+cape / tricorn+
+           skull / helmet+backpack) remain visible in run + airborne + landing poses.
+        4. No corgi shows Classic art as a substitute.
+        5. No console errors.
+        6. Milestone banners fire at scores 10 / 25 / 50 / 75 / 100 without pausing.
+        7. New-best celebration appears once when the run crosses the previous best.
+        8. Restart, pause/resume, and menu-return preserve the selected corgi.
 
 agent_communication:
   - agent: "main"
