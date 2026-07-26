@@ -213,9 +213,16 @@ workflows:
           # environment.ios_signing into the runner's filesystem. Initialise
           # the keychain and bind the profile to the Xcode project so
           # xcode-project build-ipa can pick it up without opening Xcode.
+          #
+          # `testFlightInternalTestingOnly: true` writes the flag into the
+          # generated ExportOptions.plist so the archive is bundled for
+          # internal TestFlight distribution, not for public App Store
+          # submission — required for the App Store Connect API to accept
+          # the upload as a TestFlight build.
           keychain initialize
           keychain add-certificates
-          xcode-project use-profiles
+          xcode-project use-profiles \
+            --custom-export-options='{"testFlightInternalTestingOnly": true}'
 
       # -------------------------------------------------------------------
       - name: Archive + export signed IPA
@@ -227,11 +234,43 @@ workflows:
             --config          "$XCODE_CONFIG" \
             --archive-flags   "-destination 'generic/platform=iOS'"
 
+      # -------------------------------------------------------------------
+      - name: Locate generated IPA + fail if none found
+        # xcode-project build-ipa (with `working_directory: frontend`) writes
+        # the archive/IPA under `$CM_BUILD_DIR/frontend/build/ios/…`. This
+        # step proves the file exists at that path BEFORE the publishing
+        # phase runs — earlier builds silently produced a valid archive but
+        # published nothing because the artifact glob didn't match.
+        script: |
+          set -eux
+          echo "=== find frontend/ for *.ipa ==="
+          find "$CM_BUILD_DIR/frontend" -type f -name "*.ipa" -print || true
+          # Explicit count. `find … | wc -l` is portable across macOS/bash.
+          IPA_COUNT=$(find "$CM_BUILD_DIR/frontend" -type f -name "*.ipa" | wc -l | tr -d ' ')
+          echo "IPA files found: $IPA_COUNT"
+          if [ "$IPA_COUNT" -eq 0 ]; then
+            echo "FATAL: no .ipa produced by xcode-project build-ipa" >&2
+            echo "Contents of frontend/build/ios/:" >&2
+            find "$CM_BUILD_DIR/frontend/build/ios" -maxdepth 3 -print 2>&1 | sed 's/^/  /' >&2 || true
+            exit 1
+          fi
+          # Publish the resolved absolute path so downstream steps / humans
+          # inspecting the log can see exactly where the IPA landed.
+          find "$CM_BUILD_DIR/frontend" -type f -name "*.ipa" -print
+
     artifacts:
-      - frontend/ios/App/build/ios/ipa/*.ipa
-      - frontend/ios/App/build/ios/xcarchive/*.xcarchive
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-      - frontend/ios/App/**/*.dSYM.zip
+      # Actual output path of `xcode-project build-ipa` when the workflow's
+      # `working_directory` is `frontend`. Paths in the artifacts block are
+      # resolved relative to $CM_BUILD_DIR (the checkout root), NOT to the
+      # working_directory.
+      - frontend/build/ios/ipa/*.ipa
+      - frontend/build/ios/*.xcarchive
+      # Broader fallback in case a future Codemagic CLI version emits under
+      # a slightly different sub-path (e.g. `build/ios/App/…`). Overlapping
+      # matches are de-duplicated by Codemagic.
+      - frontend/build/ios/**/*.ipa
+      - frontend/build/**/*.dSYM.zip
+      # Standard Codemagic locations kept for xcodebuild logs.
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
@@ -247,8 +286,10 @@ workflows:
         # only after full store listing + review is ready.
         submit_to_app_store: false
 
-        # TestFlight internal beta tester group — must exist in App Store
-        # Connect BEFORE the first successful upload. Rename if your
-        # internal group has a different name.
-        beta_groups:
-          - Internal QA
+        # Do NOT list beta_groups until at least one internal-testing
+        # group actually exists in App Store Connect for com.corgihop.game.
+        # Codemagic rejects the upload if a group name doesn't resolve, and
+        # a missing block simply means "internal testers only" via the
+        # default App Store Connect internal-testing pipeline — which is
+        # exactly what testFlightInternalTestingOnly in ExportOptions.plist
+        # already asks for.
