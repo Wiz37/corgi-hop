@@ -77,7 +77,7 @@ export class PreloadScene extends Phaser.Scene {
     // Cache-bust query string (`?v=…`) forces the browser to fetch the latest
     // repaired PNG whenever the corgi assets are updated — bypasses any stale
     // sprite data cached from earlier gameplay sessions.
-    const V = 'v=20260726d';
+    const V = 'v=20260726e';
     this.load.spritesheet('corgi_run', `/assets/corgi_run_sheet.png?${V}`, {
       frameWidth: 366,
       frameHeight: 352,
