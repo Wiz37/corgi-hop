@@ -96,6 +96,60 @@ export function drawTrophyPanel(
   return { container: c, bestText, currentText };
 }
 
+/**
+ * COMPACT borderless trophy label — small gold trophy icon with the current
+ * score inline and a small BEST label underneath. NO panel background — just
+ * a clean icon + text pair for the top-left corner.
+ * Used by HUDScene when the spec calls for "smaller trophy icon, no large
+ * panel, no border, minimal polished styling".
+ */
+export function drawCompactTrophy(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  bestScore: number,
+  currentScore?: number,
+): TrophyPanelResult {
+  const c = scene.add.container(x, y).setDepth(50);
+  c.setData('testId', 'hud-trophy-panel');
+  const iconSize = 44;
+
+  if (scene.textures.exists('trophy')) {
+    const trophy = scene.add.image(iconSize / 2, iconSize / 2, 'trophy').setDisplaySize(iconSize, iconSize);
+    c.add(trophy);
+  } else {
+    const tg = scene.add.graphics();
+    tg.fillStyle(0xffd23c, 1);
+    tg.fillRoundedRect(6, 6, iconSize - 12, iconSize * 0.55, 6);
+    tg.fillRoundedRect(iconSize * 0.3, iconSize * 0.65, iconSize * 0.4, iconSize * 0.15, 4);
+    c.add(tg);
+  }
+
+  let currentText: Phaser.GameObjects.Text | undefined;
+  if (currentScore !== undefined) {
+    currentText = scene.add.text(iconSize + 10, 4, `${currentScore}`, {
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: '30px',
+      fontStyle: '900',
+      color: '#ffffff',
+      stroke: '#24304a',
+      strokeThickness: 5,
+    }).setOrigin(0, 0);
+    c.add(currentText);
+  }
+  const bestText = scene.add.text(2, iconSize + 4, `BEST: ${bestScore}`, {
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontSize: '16px',
+    fontStyle: '800',
+    color: '#ffd23c',
+    stroke: '#24304a',
+    strokeThickness: 4,
+  }).setOrigin(0, 0);
+  c.add(bestText);
+
+  return { container: c, bestText, currentText };
+}
+
 /** A shiny circular button with a pause / play glyph rendered by Graphics. */
 export function drawCircleControl(
   scene: Phaser.Scene,
@@ -104,13 +158,14 @@ export function drawCircleControl(
   size: number,
   glyph: 'pause' | 'play' | 'restart' | 'home',
   testId: string,
+  hitSize?: number,
 ): Phaser.GameObjects.Container {
   const c = scene.add.container(x, y).setDepth(50);
   c.setData('testId', testId);
   const g = scene.add.graphics();
   // 3D shadow
   g.fillStyle(0x18223a, 0.55);
-  g.fillCircle(3, 6, size / 2);
+  g.fillCircle(2, 4, size / 2);
   // Body
   g.fillStyle(0xffffff, 1);
   g.fillCircle(0, 0, size / 2);
@@ -118,7 +173,7 @@ export function drawCircleControl(
   g.fillStyle(0xffffff, 0.6);
   g.fillCircle(-size / 8, -size / 6, size / 3.5);
   // Stroke
-  g.lineStyle(6, 0x24304a, 1);
+  g.lineStyle(5, 0x24304a, 1);
   g.strokeCircle(0, 0, size / 2);
   // Glyph
   g.fillStyle(0x24304a, 1);
@@ -139,8 +194,12 @@ export function drawCircleControl(
     g.fillRect(-s * 0.7, 0, s * 1.4, s * 0.7);
   }
   c.add(g);
-  c.setSize(size, size);
-  c.setInteractive(new Phaser.Geom.Circle(0, 0, size / 2), Phaser.Geom.Circle.Contains);
+  // Hit-area radius — the invisible tap zone can be larger than the visible
+  // art so the control stays comfortable to tap even when the visible
+  // circle shrinks. Enforces a 44pt+ touch target.
+  const tapSize = Math.max(hitSize ?? size, size);
+  c.setSize(tapSize, tapSize);
+  c.setInteractive(new Phaser.Geom.Circle(0, 0, tapSize / 2), Phaser.Geom.Circle.Contains);
   return c;
 }
 

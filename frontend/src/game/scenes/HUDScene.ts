@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState } from '@/game/systems/GameState';
-import { drawTrophyPanel, drawTreatsPill, drawCircleControl } from '@/game/ui/PolishedHUD';
+import { drawCompactTrophy, drawTreatsPill, drawCircleControl } from '@/game/ui/PolishedHUD';
 import type { GameScene } from './GameScene';
 
 /**
@@ -25,8 +25,9 @@ export class HUDScene extends Phaser.Scene {
   create(): void {
     const gs = this.scene.get('GameScene') as GameScene;
 
-    // ---- Trophy pill ----
-    const tp = drawTrophyPanel(this, 24, 40, gameState.bestScore, 0);
+    // ---- Compact borderless trophy (bug 6): small icon + BEST label,
+    // positioned neatly in the top-left corner respecting the notch area.
+    const tp = drawCompactTrophy(this, 22, 30, gameState.bestScore, 0);
     this.trophyCurrent = tp.currentText!;
     this.trophyBest = tp.bestText;
 
@@ -42,8 +43,9 @@ export class HUDScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
     this.scoreText.setData('testId', 'hud-score-text');
 
-    // ---- Circular pause button (top-right) ----
-    const pause = drawCircleControl(this, GAME_WIDTH - 80, 88, 108, 'pause', 'hud-pause-button');
+    // ---- Smaller pause button (bug 7): visible size 76 with a 96 px tap
+    // area so the touch target stays comfortable on phones.
+    const pause = drawCircleControl(this, GAME_WIDTH - 60, 62, 76, 'pause', 'hud-pause-button', 96);
     pause.on('pointerdown', () => this.tweens.add({ targets: pause, scale: 0.92, duration: 60, yoyo: true }));
     pause.on('pointerup', () => {
       this.scene.pause('GameScene');
@@ -51,7 +53,7 @@ export class HUDScene extends Phaser.Scene {
     });
 
     // ---- Treats pill (right side, below pause) ----
-    const tt = drawTreatsPill(this, GAME_WIDTH - 24, 170, gameState.treats, 'top-right');
+    const tt = drawTreatsPill(this, GAME_WIDTH - 22, 130, gameState.treats, 'top-right');
     this.treatsText = tt.text;
 
     // ---- Bottom translucent paw jump control ----

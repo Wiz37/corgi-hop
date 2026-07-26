@@ -68,17 +68,41 @@ function boot() {
   const game = new Phaser.Game(config);
   (window as any).__CORGI_HOP__ = game;
 
-  // Auto-pause when tab/app is backgrounded (satisfies "automatic pause when backgrounded").
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      const gs = game.scene.getScene('GameScene') as GameScene | null;
-      if (gs && game.scene.isActive('GameScene') && !game.scene.isActive('PauseScene')) {
-        game.scene.pause('GameScene');
-        game.scene.pause('HUDScene');
-        game.scene.run('PauseScene');
-      }
+  // ---- Auto-pause on ANY interruption (bug 8) ----
+  // Pauses gameplay whenever the app loses focus, is backgrounded, becomes
+  // inactive, or is interrupted by a phone call. NEVER auto-resumes — the
+  // PauseScene stays up and the player must tap RESUME manually.
+  const pauseIfNeeded = (): void => {
+    if (!game.scene.getScene('GameScene')) return;
+    const isGameActive = game.scene.isActive('GameScene');
+    const isPauseUp = game.scene.isActive('PauseScene');
+    const isOver = game.scene.isActive('GameOverScene');
+    if (isGameActive && !isPauseUp && !isOver) {
+      game.scene.pause('GameScene');
+      game.scene.pause('HUDScene');
+      game.scene.run('PauseScene');
     }
-  });
+  };
+  // Browser visibility / focus signals
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseIfNeeded(); });
+  window.addEventListener('blur', pauseIfNeeded);
+  window.addEventListener('pagehide', pauseIfNeeded);
+  // Capacitor App plugin (native builds) — pause when isActive becomes false.
+  // Loaded dynamically so browser preview does not require the plugin.
+  const w = window as any;
+  const isNative = !!(w.Capacitor && w.Capacitor.isNativePlatform && w.Capacitor.isNativePlatform());
+  if (isNative) {
+    const modPath = '@capacitor/app';
+    import(/* @vite-ignore */ modPath)
+      .then(({ App }: any) => {
+        App.addListener('appStateChange', (state: { isActive: boolean }) => {
+          if (!state.isActive) pauseIfNeeded();
+          // isActive=true → deliberately do NOT resume. PauseScene remains
+          // visible until the player manually presses Resume.
+        });
+      })
+      .catch(() => { /* @capacitor/app is optional in the browser preview */ });
+  }
 
   // Hide the HTML boot splash once the first scene starts rendering.
   const hideBoot = () => {

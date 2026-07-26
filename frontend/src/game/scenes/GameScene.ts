@@ -66,17 +66,44 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Corgi
+    // ROOT-CAUSE FIX (bug 4 — selected outfit lost in gameplay):
+    // Previously the run texture was hardcoded to `corgi_run` regardless of
+    // `gameState.selectedCorgi`. That meant premium corgis (cowboy, superhero,
+    // pirate, astronaut, starter) reverted to Classic during runs. Now the
+    // selected corgi's own texture is used — Classic keeps the animated
+    // sprite-sheet, premium corgis use their static outfit art with a
+    // subtle running bounce (approved-artwork fallback rule).
     const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
-    const runTex = this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle';
-    this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY - 20, runTex, 0);
+    const isClassic = cd.id === 'classic';
+    const runTex = isClassic
+      ? (this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle')
+      : (this.textures.exists(cd.texture) ? cd.texture : (this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle'));
+    // ROOT-CAUSE FIX (bug 2 — landing rock on start): spawn exactly on the
+    // ground so the "wasFalling" branch doesn't trigger on frame 1.
+    this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY, runTex, 0);
     this.corgi.setDepth(15);        // above foreground foliage
     this.corgi.setAlpha(1);         // guaranteed fully opaque
     this.corgi.clearTint();         // never tint the classic corgi
+    this.corgi.setFlipX(false);     // always right-facing — NEVER flipped
+    this.corgi.setAngle(0);         // no rotation, ever
     this.corgi.setOrigin(0.5, 1);
     this.corgi.setDisplaySize(190, 180);
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
-    if (cd.tint) this.corgi.setTint(cd.tint);
-    if (this.anims.exists('run')) this.corgi.play('run');
+    if (isClassic && this.anims.exists('run')) {
+      this.corgi.play('run');
+    } else if (!isClassic) {
+      // Approved-artwork safe fallback: static outfit texture + subtle 2 px
+      // vertical bounce tween so the outfit appears to be running.
+      this.corgi.anims.stop();
+      this.tweens.add({
+        targets: this.corgi,
+        y: this.corgi.y - 2,
+        duration: 220,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
     // Collision box in physics body units — since arcade physics bodies are
     // sized in *source texture* units, compute from the source dimensions so the
     // hitbox stays consistent regardless of displaySize.
@@ -143,14 +170,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setCorgiTexture(key: string, frame: number | string = 0): void {
-    if (!this.textures.exists(key)) return;
-    this.corgi.setTexture(key, frame);
-    // Guarantee display size, opacity, blend mode remain consistent between
-    // texture swaps (previously the corgi looked semi-transparent because
-    // an off-frame alpha reset lingered from Phaser's internal state).
+    // ROOT-CAUSE FIX (bug 4): route pose swaps through the selected corgi.
+    // Only the Classic corgi has distinct jump/fall/land textures — for
+    // every other outfit we keep the current outfit texture visible so the
+    // hat / cape / helmet / bandana never disappears mid-run.
+    const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+    let finalKey = key;
+    if (def.id !== 'classic') {
+      // Premium corgi — stay on the outfit texture regardless of pose.
+      finalKey = this.textures.exists(def.texture) ? def.texture : key;
+    }
+    if (!this.textures.exists(finalKey)) return;
+    this.corgi.setTexture(finalKey, frame);
+    // Defensive resets: opacity + orientation + display size never drift.
     this.corgi.setDisplaySize(190, 180);
     this.corgi.setAlpha(1);
+    this.corgi.setFlipX(false);
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
+    this.corgi.clearTint();
   }
 
   public tryJump = (): void => {
@@ -227,32 +264,55 @@ export class GameScene extends Phaser.Scene {
     if (this.corgi.y >= this.groundY) {
       this.corgi.y = this.groundY;
       const body = this.corgi.body as Phaser.Physics.Arcade.Body;
-      if (body.velocity.y > 0) {
-        // Just landed
+      // ROOT-CAUSE FIX (bug 2): only trigger the landing squash if the corgi
+      // was actually FALLING FAST (>400 px/s downward). Otherwise plain
+      // gravity slop would fire this every frame and the yoyo squash
+      // produced a visible "rocking" pop.
+      const wasFalling = body.velocity.y > 400;
+      if (wasFalling) {
         body.setVelocityY(0);
         this.coyoteUntil = time + this.COYOTE_MS;
-        // Landing squash
+        // Landing squash — swap texture and hold briefly. NO yoyo tween on
+        // displayHeight anymore (that was the source of the rocking).
         this.setCorgiTexture('corgi_land');
-        this.tweens.add({ targets: this.corgi, displayHeight: 140, duration: 70, yoyo: true, onComplete: () => {
-          if (!this.ended && this.anims.exists('run')) {
+        this.corgi.anims.stop();
+        const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+        const isClassic = def.id === 'classic';
+        this.time.delayedCall(90, () => {
+          if (!this.ended) {
+            if (isClassic && this.anims.exists('run')) {
+              this.setCorgiTexture('corgi_run', 0);
+              this.corgi.play('run');
+            } else if (!isClassic) {
+              // Premium: keep showing outfit texture
+              this.setCorgiTexture(def.texture);
+            }
+          }
+        });
+      } else {
+        body.setVelocityY(0);
+        // On ground with negligible velocity → stay in run state.
+        const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+        const isClassic = def.id === 'classic';
+        if (isClassic && this.corgi.anims.currentAnim?.key !== 'run' && !this.ended) {
+          if (this.anims.exists('run')) {
             this.setCorgiTexture('corgi_run', 0);
             this.corgi.play('run');
           }
-        }});
-      } else if (this.corgi.anims.currentAnim?.key !== 'run' && !this.ended) {
-        if (this.anims.exists('run')) {
-          this.setCorgiTexture('corgi_run', 0);
-          this.corgi.play('run');
         }
       }
     } else {
-      // Airborne — swap to jump/fall texture
+      // Airborne — swap to jump/fall texture (NO angle tween, NO rotation).
       const vy = (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y;
+      const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+      const isClassic = def.id === 'classic';
       if (vy < 0) {
-        this.setCorgiTexture('corgi_jump');
+        // Ascending
+        this.setCorgiTexture(isClassic ? 'corgi_jump' : def.texture);
         this.corgi.anims.stop();
       } else if (vy > 0) {
-        this.setCorgiTexture('corgi_fall');
+        // Descending
+        this.setCorgiTexture(isClassic ? 'corgi_fall' : def.texture);
         this.corgi.anims.stop();
       }
     }
@@ -285,64 +345,105 @@ export class GameScene extends Phaser.Scene {
     // that early runs stay easy and every run has different rhythm.
     type Pattern = 'single' | 'single-tall' | 'double-close' | 'double-mid' | 'wide-double' | 'triple';
     let table: Array<[Pattern, number]>;
-    if (score < 4) {
+    if (score < 8) {
+      // Very easy opening — mostly single short hurdles, extremely generous
+      // spacing (spec: scores 0-7).
       table = [['single', 100]];
-    } else if (score < 10) {
-      table = [['single', 85], ['single-tall', 15]];
-    } else if (score < 20) {
-      table = [['single', 55], ['single-tall', 20], ['double-mid', 25]];
-    } else if (score < 32) {
-      table = [['single', 40], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 5]];
+    } else if (score < 18) {
+      table = [['single', 80], ['single-tall', 20]];
+    } else if (score < 30) {
+      table = [['single', 50], ['single-tall', 20], ['double-mid', 20], ['double-close', 10]];
     } else {
-      table = [['single', 25], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 15], ['triple', 5]];
+      table = [['single', 30], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 12], ['triple', 3]];
     }
     const totalW = table.reduce((s, [, w]) => s + w, 0);
     let roll = Math.random() * totalW;
     let variant: Pattern = 'single';
     for (const [p, w] of table) { roll -= w; if (roll <= 0) { variant = p; break; } }
 
-    const baseX = GAME_WIDTH + 120;
-    const shortH = 140;
-    const tallH = 190;
+    // ---- Hurdle heights — SHORTER and RANDOMISED per spec ----
+    // The corgi can jump ~310 px high given jumpVelocity/gravity, so any
+    // hurdle up to ~180 px is comfortably clearable. We stay well below that
+    // for fairness and keep the maximum well within the corgi's arc.
+    let shortH: number, midH: number, tallH: number;
+    if (score < 8) {
+      shortH = Phaser.Math.Between(85, 105);
+      midH = shortH; tallH = shortH;
+    } else if (score < 18) {
+      shortH = Phaser.Math.Between(90, 115);
+      midH = Phaser.Math.Between(100, 125);
+      tallH = Phaser.Math.Between(115, 135);
+    } else if (score < 30) {
+      shortH = Phaser.Math.Between(95, 120);
+      midH = Phaser.Math.Between(110, 135);
+      tallH = Phaser.Math.Between(130, 150);
+    } else {
+      shortH = Phaser.Math.Between(100, 125);
+      midH = Phaser.Math.Between(115, 140);
+      tallH = Phaser.Math.Between(135, 160);
+    }
 
-    // ---- Spawn each pattern with randomised local spacing ----
+    const baseX = GAME_WIDTH + 120;
+
+    // ---- Physics-derived spacing limits (obstacle-generation validation) ----
+    // Given jumpVelocity=-1220 and gravity=2400 the total air-time is ~1.02s.
+    // Horizontal cover in one jump at the current gameSpeed:
+    const airTime = (2 * Math.abs(this.jumpVelocity)) / 2400;
+    const jumpRange = this.gameSpeed * airTime;
+    // Between OBSTACLE GROUPS the corgi must land + take a stride + jump.
+    // Enforce a runway of at least 55% of a jump-range or 320 px, whichever
+    // is greater — no possible pattern spawns beyond this.
+    const minRunway = Math.max(320, jumpRange * 0.55);
+    // WITHIN a cluster (double / triple) the corgi jumps ONCE over both.
+    // Cap the cluster span at 80% of jump range so it is always clearable.
+    const maxClusterSpan = jumpRange * 0.8;
+    const fenceW = 80;
+    const clampCluster = (gap: number) => {
+      const span = gap + fenceW;
+      if (span > maxClusterSpan) return Math.max(160, maxClusterSpan - fenceW);
+      return Math.max(160, gap);
+    };
+    const gapAfter = (lo: number, hi: number) =>
+      Phaser.Math.Between(Math.max(lo, minRunway), Math.max(hi, minRunway + 60));
+
+    // ---- Spawn each pattern with validated spacing ----
     switch (variant) {
       case 'single':
         this.spawnFence(baseX, shortH);
-        this.nextGap = Phaser.Math.Between(560, 780);
+        this.nextGap = gapAfter(500, 720);
         break;
       case 'single-tall':
         this.spawnFence(baseX, tallH);
-        this.nextGap = Phaser.Math.Between(620, 820);
+        this.nextGap = gapAfter(560, 780);
         break;
       case 'double-close': {
-        const gap = Phaser.Math.Between(170, 210);
+        const gap = clampCluster(Phaser.Math.Between(170, 220));
         this.spawnFence(baseX, shortH);
         this.spawnFence(baseX + gap, shortH);
-        this.nextGap = Phaser.Math.Between(660, 820);
+        this.nextGap = gapAfter(620, 820);
         break;
       }
       case 'double-mid': {
-        const gap = Phaser.Math.Between(240, 320);
+        const gap = clampCluster(Phaser.Math.Between(240, 320));
         this.spawnFence(baseX, shortH);
-        this.spawnFence(baseX + gap, Phaser.Math.RND.pick([shortH, tallH]));
-        this.nextGap = Phaser.Math.Between(700, 860);
+        this.spawnFence(baseX + gap, Phaser.Math.RND.pick([shortH, midH]));
+        this.nextGap = gapAfter(660, 860);
         break;
       }
       case 'wide-double': {
-        const gap = Phaser.Math.Between(360, 440);
+        const gap = clampCluster(Phaser.Math.Between(340, 420));
         this.spawnFence(baseX, shortH);
         this.spawnFence(baseX + gap, shortH);
-        this.nextGap = Phaser.Math.Between(760, 900);
+        this.nextGap = gapAfter(720, 900);
         break;
       }
       case 'triple': {
-        const g1 = Phaser.Math.Between(220, 280);
-        const g2 = Phaser.Math.Between(220, 280);
+        const g1 = clampCluster(Phaser.Math.Between(200, 260));
+        const g2 = clampCluster(Phaser.Math.Between(200, 260));
         this.spawnFence(baseX, shortH);
         this.spawnFence(baseX + g1, shortH);
         this.spawnFence(baseX + g1 + g2, shortH);
-        this.nextGap = Phaser.Math.Between(820, 980);
+        this.nextGap = gapAfter(780, 980);
         break;
       }
     }
@@ -352,7 +453,7 @@ export class GameScene extends Phaser.Scene {
       const treatCount = Math.random() < 0.25 ? 3 : Math.random() < 0.5 ? 2 : 1;
       for (let i = 0; i < treatCount; i++) {
         const tx = baseX + Phaser.Math.Between(20, 260) + i * 70;
-        const ty = this.groundY - shortH - 30 - Phaser.Math.Between(0, 120);
+        const ty = this.groundY - shortH - 30 - Phaser.Math.Between(0, 100);
         this.spawnTreat(tx, ty);
       }
     }
@@ -424,13 +525,17 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Trigger game-over sequence
+    // Trigger game-over sequence. NO angle tween on the corgi any more —
+    // that was the source of the "spinning" bug. We keep a small vertical
+    // pop for feedback but never rotate the body.
     this.running = false;
     this.ended = true;
     this.cameras.main.shake(220, 0.012);
     this.setCorgiTexture('corgi_hit');
     this.corgi.anims.stop();
-    this.tweens.add({ targets: this.corgi, angle: -25, y: this.corgi.y - 40, duration: 300, ease: 'Sine.easeOut' });
+    this.corgi.setAngle(0);
+    this.corgi.setFlipX(false);
+    this.tweens.add({ targets: this.corgi, y: this.corgi.y - 40, duration: 300, ease: 'Sine.easeOut' });
 
     // Save last collided obstacle for potential revive.
     const scene = this;
@@ -499,19 +604,23 @@ export class GameScene extends Phaser.Scene {
 
   /** Sprinkle scrolling background decor grounded to the running path. */
   private addStaticDecor(): void {
-    // All items use `origin (0.5, 1)` so `y` is where the ITEM'S FEET land.
-    // We anchor everything to `groundY` (or a small vertical offset) so
-    // nothing floats above the horizon line.
+    // ROOT-CAUSE FIX (bug 10 — floating bushes):
+    // Bushes must render OVER the grass strip (depth 5) but BEHIND the corgi
+    // (depth 15). Previously depth 4.7 placed them BEHIND the grass, causing
+    // the top of each bush to poke above the grass edge — visually "floating".
+    // Depth 6-7 puts them cleanly on top of the grass strip, feet grounded.
+    // We also nudge the Y so the bush base (origin 0.5, 1) rests on the path
+    // top, not below it.
     const items: Array<{ key: string; y: number; scale: number; depth: number; alpha?: number; scroll: number }> = [
       // Big trees sit slightly behind the fence line so their roots still
       // touch the grass strip.
-      { key: 'tree_left',  y: this.groundY - 4,  scale: 0.35, depth: 4.6, alpha: 0.95, scroll: 60 },
-      { key: 'tree_right', y: this.groundY - 4,  scale: 0.32, depth: 4.6, alpha: 0.95, scroll: 60 },
-      // Small bushes hug the ground line
-      { key: 'bush',       y: this.groundY + 8,  scale: 0.22, depth: 4.7, alpha: 1,    scroll: 90 },
-      { key: 'bush',       y: this.groundY + 12, scale: 0.20, depth: 4.7, alpha: 1,    scroll: 90 },
+      { key: 'tree_left',  y: this.groundY - 4,  scale: 0.35, depth: 6.4, alpha: 0.95, scroll: 60 },
+      { key: 'tree_right', y: this.groundY - 4,  scale: 0.32, depth: 6.4, alpha: 0.95, scroll: 60 },
+      // Small bushes hug the grass line (feet just above the path).
+      { key: 'bush',       y: this.groundY - 2,  scale: 0.22, depth: 6.8, alpha: 1,    scroll: 90 },
+      { key: 'bush',       y: this.groundY - 4,  scale: 0.20, depth: 6.8, alpha: 1,    scroll: 90 },
       // Rocks between the corgi and the horizon
-      { key: 'rock',       y: this.groundY + 18, scale: 0.20, depth: 4.7, alpha: 1,    scroll: 90 },
+      { key: 'rock',       y: this.groundY - 2,  scale: 0.20, depth: 6.8, alpha: 1,    scroll: 90 },
     ];
     const spacing = 520;
     for (let i = 0; i < 10; i++) {

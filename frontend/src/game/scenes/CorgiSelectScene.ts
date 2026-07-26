@@ -3,16 +3,38 @@ import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState, CORGIS, type CorgiId } from '@/game/systems/GameState';
 import { services } from '@/services';
 import { PolishedButton } from '@/game/ui/PolishedButton';
-import { buildParallax, scatterMenuDecor } from '@/game/systems/Parallax';
 
-/** Grid of corgis with select / try-with-ad actions. */
+/**
+ * CorgiSelectScene — clean corgi picker.
+ *
+ * ROOT-CAUSE FIX (bug 5 — "gameplay dog running behind cards"):
+ * Previously this scene called `buildParallax(this) + scatterMenuDecor(this, 920)`,
+ * which drew all six parallax layers plus scatter decor beneath the cards.
+ * Even though no gameplay corgi was launched here, the illustrated
+ * countryside behind the cards visually competed with the selection UI and
+ * looked like a live gameplay scene continuing under the picker.
+ * Fixed by replacing the parallax background with a clean static polished
+ * gradient background so the cards read cleanly.
+ */
 export class CorgiSelectScene extends Phaser.Scene {
   constructor() { super('CorgiSelectScene'); }
 
   create(): void {
-    buildParallax(this);
-    scatterMenuDecor(this, 920);
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.35).setDepth(24);
+    // ---- Clean static polished background (no gameplay dog, no parallax) ----
+    const g = this.add.graphics().setDepth(0);
+    // Soft blue sky gradient
+    g.fillGradientStyle(0x3fa7ff, 0x3fa7ff, 0xd8efff, 0xd8efff, 1, 1, 1, 1);
+    g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.72);
+    // Rolling grass strip along the bottom (static — no parallax)
+    g.fillGradientStyle(0x86d17a, 0x6ec867, 0x66bd60, 0x5dae57, 1);
+    g.fillRect(0, GAME_HEIGHT * 0.72, GAME_WIDTH, GAME_HEIGHT * 0.28);
+    // Two soft static cloud silhouettes for warmth
+    g.fillStyle(0xffffff, 0.55);
+    g.fillEllipse(200, 140, 240, 60);
+    g.fillEllipse(540, 210, 260, 70);
+    // Subtle dim overlay so the cards pop
+    g.fillStyle(0x000000, 0.22);
+    g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     this.add.text(GAME_WIDTH / 2, 90, 'CHOOSE CORGI', {
       fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -56,14 +78,23 @@ export class CorgiSelectScene extends Phaser.Scene {
     g.strokeRoundedRect(-w / 2, -h / 2, w, h, 26);
     c.add(g);
 
+    // Preview art — the approved static polished portrait for this corgi.
+    // The card is CLIPPED to its bounds via the container mask so the preview
+    // never overflows even if the source art is oversized.
     const tex = this.textures.exists(def.texture) ? def.texture : 'corgi_idle';
-    const img = this.add.image(0, -50, tex).setDisplaySize(200, 200);
+    const img = this.add.image(0, -50, tex)
+      .setDisplaySize(200, 200)
+      .setAlpha(1)
+      .setFlipX(false);   // always right-facing
     if (def.tint) img.setTint(def.tint);
     c.add(img);
+
+    // Name label
     c.add(this.add.text(0, 70, def.name, {
       fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '22px', fontStyle: '900', color: '#24304a',
     }).setOrigin(0.5));
 
+    // Action button
     let actionLabel: string;
     let color = 0x4bb8ff, shadow = 0x1f6ea0;
     if (owned) {
@@ -83,6 +114,7 @@ export class CorgiSelectScene extends Phaser.Scene {
       fontSize: 20,
       onTap: async () => {
         if (owned) {
+          // Persist immediately so selection survives app relaunch.
           gameState.selectedCorgi = id;
           gameState.saveSelected();
           gameState.clearTrial();
