@@ -55,6 +55,11 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2   # Apple-Silicon Codemagic runner
     working_directory: frontend
+    integrations:
+      # Named integration created in Codemagic → Teams → Integrations →
+      # App Store Connect. All Apple credentials (issuer ID, key ID, .p8)
+      # live inside that integration; nothing sensitive is committed here.
+      app_store_connect: corgi_hop_apple
     environment:
       xcode: 26.6                # any accepted 26.x tag — Codemagic picks
                                  # the latest patch if the exact minor is
@@ -71,10 +76,6 @@ workflows:
         XCODE_SCHEME: App
         XCODE_CONFIG: Release
         MARKETING_VERSION: 1.0.0
-      integrations:
-        # This name MUST match the App Store Connect integration you create
-        # in Codemagic → Teams → Integrations.
-        app_store_connect: Corgi Hop Apple
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.corgihop.game
@@ -227,8 +228,9 @@ workflows:
 
     publishing:
       app_store_connect:
-        # Uses the same "Corgi Hop Apple" integration referenced above.
-        # No .p8 / issuer ID / private-key material lives in this file.
+        # Uses the "corgi_hop_apple" integration referenced at the workflow
+        # level above. No .p8 / issuer ID / private-key material lives in
+        # this file.
         auth: integration
         submit_to_testflight: true
 
@@ -242,12 +244,3 @@ workflows:
         # internal group has a different name.
         beta_groups:
           - Internal QA
-
-      email:
-        # Notified on both success + failure so the pipeline is
-        # observable end-to-end. Recipients are inherited from the
-        # Codemagic team settings; edit here if you need overrides.
-        recipients: []
-        notify:
-          success: true
-          failure: true
