@@ -1,65 +1,101 @@
 /**
  * HurdleGenerator — the authoritative obstacle spawn engine for Corgi Hop.
  *
- * Design goals (from the "10,000-sequence hurdle validator" spec):
- *   • Every generated hurdle MUST be clearable using the current live
- *     physics constants (jumpVelocity, world gravity, asymmetric
- *     gravity adjustments, corgi collision size, corgi horizontal speed).
- *   • Every sequence MUST provide the minimum reaction window for its
- *     difficulty tier (450 ms at scores 0-7, down to 200 ms at 30+).
- *   • Between-group runways MUST be long enough for the corgi to LAND,
- *     take a stride, and JUMP again before hitting the next hurdle.
- *   • Randomness must produce variety, but a validator can reject any
- *     candidate that fails ANY of the physical checks.
+ * DIFFICULTY OVERHAUL (July 2026):
+ *   • Removed the "three-hurdle wall near score 20" regression.
+ *   • Speed curve is now a smooth piecewise-linear interpolation reaching
+ *     ~680 px/s only around score 200, instead of maxing out at 760 by score
+ *     52.
+ *   • Pattern tables retuned: SINGLE-ONLY up to score 30, doubles begin at
+ *     31, triples begin only at 101, per the approved spec.
+ *   • Reaction-window enforcement floor raised (0-30: ≥1250 ms, ...
+ *     151+: ≥750 ms).
+ *   • One-dimension-at-a-time rule: candidates that combine max height +
+ *     max width + tight spacing are rejected by validate().
+ *   • Anti-repeat: after any triple, the next candidate is forced to a
+ *     single-with-generous-spacing.
  *
  * All maths here is pure JavaScript with no Phaser dependency, so the
  * `validate_hurdles.mjs` Node script can `import` this module (via `tsx`)
- * and run exactly the same generator + validator that ships in the game.
+ * and exercise exactly the same generator + validator that ships in the
+ * game (see 25 000-sequence audit run).
  */
 
 // ---------------------------------------------------------------------------
-// PHYSICS CONSTANTS — these MUST match the values used in GameScene / main.ts
-// If you change gravity or jumpVelocity in the game, mirror it here too.
+// PHYSICS CONSTANTS — mirror the values in GameScene / main.ts
 // ---------------------------------------------------------------------------
 export const PHYSICS = {
-  worldGravity: 2400,        // main.ts arcade.gravity.y
-  gravityRise:  -400,        // GameScene.applyAirGravity() delta while rising
-  gravityFall:  1000,        // GameScene.applyAirGravity() delta while falling
-  jumpVelocity: -980,        // GameScene.jumpVelocity — lowered from -1220
-                             // so peak is ~240 px (≈1.5 body-heights) instead
-                             // of ~372 px. Every constant below is retuned
-                             // for this new arc.
-  baseSpeed:     340,        // starting horizontal scroll speed (px/s)
-  maxSpeed:      760,        // capped speed at high scores
-  speedRampK:      8,        // targetSpeed = baseSpeed + score * speedRampK
-  dogColliderW:  120,        // approximate corgi collision box width (px)
-  fenceW:         80,        // picket-fence collision width (px)
-  // Height cap tuned for the LOWER jump arc: max hurdle 150 px comfortably
-  // clears with ~90 px of head-room at peakPx=240. Any taller hurdle would
-  // require pixel-perfect timing, so the generator refuses to spawn one.
+  worldGravity: 2400,
+  gravityRise:  -400,
+  gravityFall:  1000,
+  jumpVelocity: -980,        // peak ≈ 240 px (~1.5 corgi body-heights)
+  baseSpeed:     340,
+  maxSpeed:      680,        // long-term cap (was 760)
+  dogColliderW:  120,
+  fenceW:         80,
   maxHurdleH:    150,
   minHurdleH:     70,
-  minHurdleW:     56,        // narrowest picket fence still visible
-  maxHurdleW:    130,        // widest picket fence still clearable in one jump
+  minHurdleW:     56,
+  maxHurdleW:    130,
 } as const;
 
+/**
+ * Smooth piecewise-linear speed curve — replaces the old
+ * "baseSpeed + score * 8" formula that reached maxSpeed at score 52.
+ * Anchor points (approved by design spec):
+ *
+ *   score |  speed
+ *      0  |  340
+ *     20  |  390
+ *     50  |  440
+ *     75  |  480
+ *    100  |  520
+ *    150  |  580
+ *    200  |  630
+ *    +∞   |  680  (asymptote)
+ */
+const SPEED_CURVE: Array<[number, number]> = [
+  [  0, 340],
+  [ 20, 390],
+  [ 50, 440],
+  [ 75, 480],
+  [100, 520],
+  [150, 580],
+  [200, 630],
+  [280, 680],
+];
+
+export function speedForScore(score: number): number {
+  if (score <= SPEED_CURVE[0][0]) return SPEED_CURVE[0][1];
+  for (let i = 1; i < SPEED_CURVE.length; i++) {
+    const [x1, y1] = SPEED_CURVE[i - 1];
+    const [x2, y2] = SPEED_CURVE[i];
+    if (score <= x2) {
+      const t = (score - x1) / (x2 - x1);
+      return Math.round(y1 + (y2 - y1) * t);
+    }
+  }
+  return PHYSICS.maxSpeed;
+}
+
 // ---------------------------------------------------------------------------
-// Difficulty tiers — matches the spec's fairness rules
+// Difficulty tiers — the "1D-at-a-time" spec constrains BOTH pattern mix and
+// height/width bands per tier. Reaction windows are enforced in validate().
 // ---------------------------------------------------------------------------
 export interface DifficultyTier {
   scoreMin: number;
   scoreMax: number;
-  minReactionMs: number;     // absolute minimum valid input window
+  minReactionMs: number;
   heights: { min: number; max: number };
   widths:  { min: number; max: number };
-  patterns: PatternSpec[];   // weighted pattern selection
+  patterns: PatternSpec[];
 }
 
 export type PatternKind =
   | 'single'
   | 'single-tall'
-  | 'double-close'
   | 'double-mid'
+  | 'double-close'
   | 'wide-double'
   | 'triple';
 
@@ -69,61 +105,84 @@ export interface PatternSpec {
 }
 
 export const TIERS: DifficultyTier[] = [
+  // Confidence-building opening: SINGLE ONLY, short-to-medium hurdles,
+  // generous spacing, generous reaction window.
   {
-    scoreMin: 0, scoreMax: 7,
-    minReactionMs: 450,
-    heights: { min: 70,  max: 92  },
-    widths:  { min: 56,  max: 80  },
+    scoreMin: 0, scoreMax: 30,
+    minReactionMs: 1250,
+    heights: { min: 70,  max: 100 },
+    widths:  { min: 56,  max: 82  },
     patterns: [{ kind: 'single', weight: 100 }],
   },
+  // First difficulty step: mostly single, first rare doubles at score 40+
+  // (generator enforces the 40-floor in generateCandidate).
   {
-    scoreMin: 8, scoreMax: 17,
-    minReactionMs: 350,
-    heights: { min: 78,  max: 105 },
-    widths:  { min: 60,  max: 90  },
+    scoreMin: 31, scoreMax: 60,
+    minReactionMs: 1100,
+    heights: { min: 74,  max: 115 },
+    widths:  { min: 58,  max: 92  },
     patterns: [
       { kind: 'single',      weight: 78 },
-      { kind: 'single-tall', weight: 22 },
+      { kind: 'single-tall', weight: 12 },
+      { kind: 'double-mid',  weight: 10 },
     ],
   },
+  // Skilled mid-game: still no triples.
   {
-    scoreMin: 18, scoreMax: 29,
-    minReactionMs: 275,
-    heights: { min: 86,  max: 118 },
-    widths:  { min: 62,  max: 100 },
+    scoreMin: 61, scoreMax: 100,
+    minReactionMs: 950,
+    heights: { min: 78,  max: 128 },
+    widths:  { min: 60,  max: 105 },
     patterns: [
-      { kind: 'single',       weight: 48 },
-      { kind: 'single-tall',  weight: 22 },
+      { kind: 'single',       weight: 60 },
+      { kind: 'single-tall',  weight: 15 },
+      { kind: 'double-mid',   weight: 18 },
+      { kind: 'wide-double',  weight: 7  },
+    ],
+  },
+  // Rare-triples band. Every triple is followed by a forced single.
+  {
+    scoreMin: 101, scoreMax: 150,
+    minReactionMs: 850,
+    heights: { min: 82,  max: 138 },
+    widths:  { min: 62,  max: 115 },
+    patterns: [
+      { kind: 'single',       weight: 55 },
+      { kind: 'single-tall',  weight: 15 },
       { kind: 'double-mid',   weight: 20 },
-      { kind: 'double-close', weight: 10 },
-    ],
-  },
-  {
-    scoreMin: 30, scoreMax: 49,
-    minReactionMs: 220,
-    heights: { min: 90,  max: 130 },
-    widths:  { min: 64,  max: 110 },
-    patterns: [
-      { kind: 'single',       weight: 30 },
-      { kind: 'single-tall',  weight: 22 },
-      { kind: 'double-mid',   weight: 22 },
-      { kind: 'double-close', weight: 16 },
-      { kind: 'wide-double',  weight: 8  },
+      { kind: 'wide-double',  weight: 5  },
+      { kind: 'double-close', weight: 3  },
       { kind: 'triple',       weight: 2  },
     ],
   },
+  // Late game: more combinations, still fair.
   {
-    scoreMin: 50, scoreMax: 9999,
-    minReactionMs: 200,
-    heights: { min: 95,  max: PHYSICS.maxHurdleH },
+    scoreMin: 151, scoreMax: 200,
+    minReactionMs: 800,
+    heights: { min: 85,  max: 145 },
+    widths:  { min: 64,  max: 122 },
+    patterns: [
+      { kind: 'single',       weight: 42 },
+      { kind: 'single-tall',  weight: 13 },
+      { kind: 'double-mid',   weight: 22 },
+      { kind: 'wide-double',  weight: 10 },
+      { kind: 'double-close', weight: 8  },
+      { kind: 'triple',       weight: 5  },
+    ],
+  },
+  // Endless band. Reaction window floor 750 ms — spec says NEVER below.
+  {
+    scoreMin: 201, scoreMax: 9999,
+    minReactionMs: 750,
+    heights: { min: 88,  max: PHYSICS.maxHurdleH },
     widths:  { min: 66,  max: PHYSICS.maxHurdleW },
     patterns: [
-      { kind: 'single',       weight: 24 },
-      { kind: 'single-tall',  weight: 22 },
+      { kind: 'single',       weight: 38 },
+      { kind: 'single-tall',  weight: 14 },
       { kind: 'double-mid',   weight: 22 },
-      { kind: 'double-close', weight: 16 },
-      { kind: 'wide-double',  weight: 12 },
-      { kind: 'triple',       weight: 4  },
+      { kind: 'wide-double',  weight: 10 },
+      { kind: 'double-close', weight: 8  },
+      { kind: 'triple',       weight: 8  },
     ],
   },
 ];
@@ -137,20 +196,20 @@ export function tierFor(score: number): DifficultyTier {
 // Jump-arc math — derived from the live physics constants above.
 // ---------------------------------------------------------------------------
 export interface JumpArc {
-  peakPx: number;         // maximum height above ground during a single jump
-  ascentMs: number;       // ms to reach peak
-  descentMs: number;      // ms from peak back to ground
-  totalAirMs: number;     // total airborne time
+  peakPx: number;
+  ascentMs: number;
+  descentMs: number;
+  totalAirMs: number;
   horizontalRangeAtSpeed: (speed: number) => number;
 }
 
 export function jumpArc(): JumpArc {
-  const v0 = Math.abs(PHYSICS.jumpVelocity);                 // 1220
-  const gRise = PHYSICS.worldGravity + PHYSICS.gravityRise;  // 2000
-  const gFall = PHYSICS.worldGravity + PHYSICS.gravityFall;  // 3400
-  const ascent = v0 / gRise;                                 // s to peak (v=0)
-  const peakPx = (v0 * v0) / (2 * gRise);                    // 372 px
-  const descent = Math.sqrt((2 * peakPx) / gFall);           // s back to ground
+  const v0 = Math.abs(PHYSICS.jumpVelocity);
+  const gRise = PHYSICS.worldGravity + PHYSICS.gravityRise;
+  const gFall = PHYSICS.worldGravity + PHYSICS.gravityFall;
+  const ascent = v0 / gRise;
+  const peakPx = (v0 * v0) / (2 * gRise);
+  const descent = Math.sqrt((2 * peakPx) / gFall);
   return {
     peakPx,
     ascentMs: ascent * 1000,
@@ -161,9 +220,7 @@ export function jumpArc(): JumpArc {
 }
 
 // ---------------------------------------------------------------------------
-// Candidate pattern schema — a single generator run produces one of these,
-// which is a validated group of 1..3 fences plus the runway that MUST follow
-// before the next group can be spawned.
+// Candidate + validator
 // ---------------------------------------------------------------------------
 export interface FenceSpec { x: number; height: number; width: number; }
 
@@ -172,10 +229,10 @@ export interface HurdleCandidate {
   gameSpeed: number;
   tier: DifficultyTier;
   kind: PatternKind;
-  fences: FenceSpec[];        // fences within THIS group, ordered by x
-  clusterSpan: number;         // (last fence x + last fence w/2) - (first fence x - first fence w/2)
-  nextRunwayPx: number;        // required horizontal runway to the NEXT group
-  reactionMs: number;          // reaction window from spawn to first collision
+  fences: FenceSpec[];
+  clusterSpan: number;
+  nextRunwayPx: number;
+  reactionMs: number;
 }
 
 export interface ValidationResult {
@@ -183,58 +240,82 @@ export interface ValidationResult {
   reasons: string[];
 }
 
+// Landing squash lasts ~90 ms in GameScene, then the corgi returns to run.
+// Add a small buffer so validation demands the player has landed AND recovered
+// before another mandatory jump.
+const LANDING_MS      = 90;
+const RECOVERY_BUFFER = 130;
+
 export function validate(c: HurdleCandidate): ValidationResult {
   const reasons: string[] = [];
   const arc = jumpArc();
 
-  // 1) Every hurdle must be within the tier's height + width bands.
+  // 1) Fence dimensions must be within tier + global bounds.
   for (const f of c.fences) {
     if (f.height > PHYSICS.maxHurdleH) reasons.push(`fence too tall: ${f.height} > ${PHYSICS.maxHurdleH}`);
-    if (f.height < PHYSICS.minHurdleH) reasons.push(`fence too short (invisible): ${f.height} < ${PHYSICS.minHurdleH}`);
-    if (f.width > PHYSICS.maxHurdleW)  reasons.push(`fence too wide: ${f.width} > ${PHYSICS.maxHurdleW}`);
-    if (f.width < PHYSICS.minHurdleW)  reasons.push(`fence too narrow (invisible): ${f.width} < ${PHYSICS.minHurdleW}`);
-    // Every fence must be clearable by peakPx with a comfy margin.
-    // Loosened from 55% → 68% to match the new lower jump arc (peak ~240px).
-    // 68% of 240 = 163 → tallest hurdle 150 stays clearable with ~90px
-    // of body-height + safety clearance above.
-    if (f.height > arc.peakPx * 0.68) {
-      reasons.push(`fence exceeds 68% of peakPx (${arc.peakPx.toFixed(0)}): ${f.height}`);
-    }
+    if (f.height < PHYSICS.minHurdleH) reasons.push(`fence too short (invisible): ${f.height}`);
+    if (f.width  > PHYSICS.maxHurdleW) reasons.push(`fence too wide: ${f.width}`);
+    if (f.width  < PHYSICS.minHurdleW) reasons.push(`fence too narrow (invisible): ${f.width}`);
+    if (f.height > arc.peakPx * 0.68)  reasons.push(`fence exceeds 68% of peakPx ${arc.peakPx.toFixed(0)}: ${f.height}`);
   }
-  // 2) The cluster span (first-to-last edge of a multi-fence group) must fit
-  //    inside a single jump's horizontal range at the current game speed.
+
+  // 2) Cluster span (multi-fence groups) must fit inside a single jump's range.
   const oneJumpRange = arc.horizontalRangeAtSpeed(c.gameSpeed);
   if (c.clusterSpan > oneJumpRange * 0.85) {
     reasons.push(`cluster span ${c.clusterSpan.toFixed(0)}px > 85% of jump range ${oneJumpRange.toFixed(0)}px`);
   }
-  // 3) Within-cluster fence-to-fence gap check — no two fences may overlap.
+
+  // 3) No fence-to-fence overlap within a cluster (edge gap >= 40 px).
   for (let i = 1; i < c.fences.length; i++) {
     const prev = c.fences[i - 1];
     const cur  = c.fences[i];
     const edgeGap = (cur.x - cur.width / 2) - (prev.x + prev.width / 2);
-    if (edgeGap < 40) reasons.push(`fences ${i - 1} & ${i} too close (edge-gap ${edgeGap.toFixed(0)}px)`);
+    if (edgeGap < 40) reasons.push(`fences ${i - 1} & ${i} overlap (edge-gap ${edgeGap.toFixed(0)}px)`);
   }
-  // 4) Runway to next group must be long enough that the corgi can LAND,
-  //    take at least ONE stride (dogColliderW), then start the next jump.
+
+  // 4) Runway to next group must be long enough that the corgi can LAND +
+  //    finish landing squash + take at least one stride + start the next jump.
   const strideBuffer = PHYSICS.dogColliderW + 40;
-  const requiredRunway = oneJumpRange * 0.55 + strideBuffer;
+  const landingRunway = (c.gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000;
+  const requiredRunway = oneJumpRange * 0.55 + strideBuffer + landingRunway;
   if (c.nextRunwayPx < requiredRunway) {
     reasons.push(`runway ${c.nextRunwayPx.toFixed(0)}px < required ${requiredRunway.toFixed(0)}px`);
   }
-  // 5) Reaction window in milliseconds must clear the tier minimum.
+
+  // 5) Reaction window must clear the tier minimum.
   if (c.reactionMs < c.tier.minReactionMs) {
     reasons.push(`reaction ${c.reactionMs.toFixed(0)}ms < tier min ${c.tier.minReactionMs}ms`);
   }
+
+  // 6) ONE-DIMENSION-AT-A-TIME rule — refuse candidates that combine max
+  //    height AND max width in the SAME fence, or a very tight double where
+  //    both fences are near maximum.
+  const heightBand = c.tier.heights.max - c.tier.heights.min;
+  const widthBand  = c.tier.widths.max  - c.tier.widths.min;
+  const isNearMaxH = (h: number) => (h - c.tier.heights.min) > heightBand * 0.85;
+  const isNearMaxW = (w: number) => (w - c.tier.widths.min)  > widthBand  * 0.85;
+  for (const f of c.fences) {
+    if (isNearMaxH(f.height) && isNearMaxW(f.width)) {
+      reasons.push(`fence at ${f.x} combines max height (${f.height}) AND max width (${f.width}) — spec forbids`);
+    }
+  }
+  // Triples with two or more near-max fences → reject (variety-not-chaos).
+  if (c.fences.length >= 3) {
+    const bigCount = c.fences.filter(f => isNearMaxH(f.height) || isNearMaxW(f.width)).length;
+    if (bigCount > 1) {
+      reasons.push(`triple has ${bigCount} near-max fences — spec allows at most one`);
+    }
+  }
+
   return { ok: reasons.length === 0, reasons };
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic RNG helpers (so the validator can seed runs)
+// RNG (Mulberry32)
 // ---------------------------------------------------------------------------
 export interface Rng { next: () => number; between: (a: number, b: number) => number; }
 
 export function makeRng(seed: number): Rng {
-  // Mulberry32 — small, fast, adequate for gameplay variety.
   let s = seed | 0;
   const next = () => {
     s = (s + 0x6D2B79F5) | 0;
@@ -249,16 +330,8 @@ export function makeRng(seed: number): Rng {
   };
 }
 
-// Runtime speed derivation (matches GameScene.targetSpeed formula)
-export function speedForScore(score: number): number {
-  return Math.min(PHYSICS.maxSpeed, PHYSICS.baseSpeed + score * PHYSICS.speedRampK);
-}
-
 // ---------------------------------------------------------------------------
-// Candidate generation. This is what GameScene calls each spawn tick.
-// The generator PROPOSES a candidate; validate() verifies it; on failure the
-// caller retries with a new seed. After 6 failed retries it should spawn the
-// "safe fallback" pattern (single short hurdle w/ generous spacing).
+// Candidate generation
 // ---------------------------------------------------------------------------
 export function generateCandidate(
   score: number,
@@ -268,87 +341,151 @@ export function generateCandidate(
 ): HurdleCandidate {
   const tier = tierFor(score);
 
-  // Weighted pattern pick with anti-repeat — reject if the last two patterns
-  // were identical (variety guarantee).
-  const totalW = tier.patterns.reduce((s, p) => s + p.weight, 0);
-  let kind: PatternKind = tier.patterns[0].kind;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    let roll = rng.next() * totalW;
-    for (const p of tier.patterns) {
-      roll -= p.weight;
-      if (roll <= 0) { kind = p.kind; break; }
+  // ANTI-REPEAT + POST-TRIPLE SAFETY: after any triple, force a single-with-
+  // generous-spacing on the very next candidate.
+  const lastKind = recentHistory[recentHistory.length - 1];
+  let kind: PatternKind;
+  if (lastKind === 'triple') {
+    kind = 'single';
+  } else {
+    // Weighted pattern pick with same-kind rejection (max 2 in a row).
+    const totalW = tier.patterns.reduce((s, p) => s + p.weight, 0);
+    kind = tier.patterns[0].kind;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      let roll = rng.next() * totalW;
+      let picked: PatternKind = tier.patterns[0].kind;
+      for (const p of tier.patterns) {
+        roll -= p.weight;
+        if (roll <= 0) { picked = p.kind; break; }
+      }
+      // Score floor for doubles / triples per user spec
+      if ((picked === 'double-mid' || picked === 'double-close' || picked === 'wide-double') && score < 40) {
+        kind = 'single';
+        continue;
+      }
+      if (picked === 'triple' && score < 101) {
+        kind = 'single';
+        continue;
+      }
+      const last2 = recentHistory.slice(-2);
+      if (last2.length === 2 && last2[0] === picked && last2[1] === picked) continue;
+      kind = picked;
+      break;
     }
-    const last2 = recentHistory.slice(-2);
-    if (!(last2.length === 2 && last2[0] === kind && last2[1] === kind)) break;
   }
 
   const arc = jumpArc();
   const oneJumpRange = arc.horizontalRangeAtSpeed(gameSpeed);
   const cap = Math.min(oneJumpRange * 0.8, 900);
-  const fenceW = () => rng.between(tier.widths.min, tier.widths.max);
-  const fenceHShort = () => rng.between(tier.heights.min, Math.min(tier.heights.max, 110));
-  const fenceHTall  = () => rng.between(Math.min(tier.heights.max, 110), tier.heights.max);
-  const fenceHMid   = () => rng.between(tier.heights.min + 15, tier.heights.max);
+
+  // The "1D-at-a-time" spec says: when picking a challenging obstacle, make at
+  // least one other property forgiving. Concretely, roll a hard-axis per
+  // fence — one of {height, width, spacing} — and constrain the OTHERS to
+  // the easy side of the band.
+  const hardAxis = (): 'height' | 'width' | 'spacing' => {
+    const r = rng.next();
+    if (r < 0.34) return 'height';
+    if (r < 0.68) return 'width';
+    return 'spacing';
+  };
+  const rollFence = (): FenceSpec => {
+    const ax = hardAxis();
+    const hMin = tier.heights.min;
+    const hMax = tier.heights.max;
+    const wMin = tier.widths.min;
+    const wMax = tier.widths.max;
+    // Easy band = lower 50%, hard band = upper 50%.
+    const hMid = (hMin + hMax) / 2;
+    const wMid = (wMin + wMax) / 2;
+    const height = ax === 'height'
+      ? rng.between(Math.round(hMid), hMax)
+      : rng.between(hMin, Math.round(hMid));
+    const width = ax === 'width'
+      ? rng.between(Math.round(wMid), wMax)
+      : rng.between(wMin, Math.round(wMid));
+    return { x: 0, height, width };
+  };
 
   const baseX = 720 + 120; // GAME_WIDTH + offscreen buffer
   const fences: FenceSpec[] = [];
 
   switch (kind) {
-    case 'single':
-      fences.push({ x: baseX, height: fenceHShort(), width: fenceW() });
+    case 'single': {
+      const f = rollFence(); f.x = baseX;
+      fences.push(f);
       break;
-    case 'single-tall':
-      fences.push({ x: baseX, height: fenceHTall(), width: fenceW() });
-      break;
-    case 'double-close': {
-      const gap = Math.min(rng.between(170, 220), cap - 80);
-      fences.push({ x: baseX,        height: fenceHShort(), width: fenceW() });
-      fences.push({ x: baseX + gap,  height: fenceHShort(), width: fenceW() });
+    }
+    case 'single-tall': {
+      // Explicit tall — but keep width easy (1D-at-a-time).
+      const height = rng.between(Math.round((tier.heights.min + tier.heights.max) / 2), tier.heights.max);
+      const width  = rng.between(tier.widths.min, Math.round((tier.widths.min + tier.widths.max) / 2));
+      fences.push({ x: baseX, height, width });
       break;
     }
     case 'double-mid': {
-      const gap = Math.min(rng.between(240, 320), cap - 80);
-      fences.push({ x: baseX,        height: fenceHShort(), width: fenceW() });
-      fences.push({ x: baseX + gap,  height: fenceHMid(),   width: fenceW() });
+      // Two short-ish fences, medium gap.
+      const gap = Math.min(rng.between(260, 340), cap - 100);
+      const f1 = rollFence(); f1.x = baseX;
+      const f2 = rollFence(); f2.x = baseX + gap;
+      // Force at least one of the pair to be easy (short + narrow).
+      f1.height = Math.min(f1.height, Math.round((tier.heights.min + tier.heights.max) / 2));
+      f1.width  = Math.min(f1.width,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
+      fences.push(f1, f2);
+      break;
+    }
+    case 'double-close': {
+      const gap = Math.min(rng.between(180, 230), cap - 80);
+      const height = rng.between(tier.heights.min, Math.round((tier.heights.min + tier.heights.max) / 2));
+      const width  = rng.between(tier.widths.min,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
+      fences.push({ x: baseX, height, width }, { x: baseX + gap, height, width });
       break;
     }
     case 'wide-double': {
-      const gap = Math.min(rng.between(340, 420), cap - 80);
-      fences.push({ x: baseX,        height: fenceHShort(), width: fenceW() });
-      fences.push({ x: baseX + gap,  height: fenceHShort(), width: fenceW() });
+      const gap = Math.min(rng.between(360, 440), cap - 80);
+      const height = rng.between(tier.heights.min, Math.round((tier.heights.min + tier.heights.max) / 2));
+      const width  = rng.between(tier.widths.min,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
+      fences.push({ x: baseX, height, width }, { x: baseX + gap, height, width });
       break;
     }
     case 'triple': {
-      let g1 = rng.between(200, 260);
-      let g2 = rng.between(200, 260);
+      // All three fences must be short + narrow (spec: never combine 3
+      // near-max fences). Gaps are validated to fit inside 85% of jump range.
+      let g1 = rng.between(210, 270);
+      let g2 = rng.between(210, 270);
       if (g1 + g2 + 160 > cap) {
         const scale = (cap - 160) / (g1 + g2);
-        g1 = Math.max(160, Math.floor(g1 * scale));
-        g2 = Math.max(160, Math.floor(g2 * scale));
+        g1 = Math.max(180, Math.floor(g1 * scale));
+        g2 = Math.max(180, Math.floor(g2 * scale));
       }
-      fences.push({ x: baseX,           height: fenceHShort(), width: fenceW() });
-      fences.push({ x: baseX + g1,      height: fenceHShort(), width: fenceW() });
-      fences.push({ x: baseX + g1 + g2, height: fenceHShort(), width: fenceW() });
+      const height = rng.between(tier.heights.min, Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.4));
+      const width  = rng.between(tier.widths.min,  Math.round(tier.widths.min  + (tier.widths.max  - tier.widths.min)  * 0.4));
+      fences.push(
+        { x: baseX,           height, width },
+        { x: baseX + g1,      height, width },
+        { x: baseX + g1 + g2, height, width },
+      );
       break;
     }
   }
 
-  // Cluster span = distance from left edge of first fence to right edge of last.
   const first = fences[0];
   const last  = fences[fences.length - 1];
   const clusterSpan = (last.x + last.width / 2) - (first.x - first.width / 2);
 
-  // Required runway to next group: at least tier-safe stride + a variable extra.
+  // Runway: physics-derived minimum + a random extra so spacing never repeats
+  // exactly. Wider runway for post-triple / high-speed candidates.
   const strideBuffer = PHYSICS.dogColliderW + 40;
+  const landingRunway = (gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000;
+  const baseRunway = arc.horizontalRangeAtSpeed(gameSpeed) * 0.55 + strideBuffer + landingRunway;
   const nextRunwayPx = Math.max(
-    arc.horizontalRangeAtSpeed(gameSpeed) * 0.55 + strideBuffer,
-    // Add a random extra runway so spacing doesn't repeat exactly.
-    strideBuffer + rng.between(140, 340),
+    baseRunway + rng.between(120, 340),
+    kind === 'triple' ? baseRunway + 260 : baseRunway,
+    // Reaction-window guarantee: nextRunway must be at least (tier.minReactionMs / 1000) * gameSpeed.
+    (tier.minReactionMs / 1000) * gameSpeed + strideBuffer,
   );
 
-  // Reaction window (ms) — how long from spawn (at baseX) until the first
-  // fence hits the corgi at x = ~200 (GameScene spawns corgi at GAME_WIDTH*0.28
-  // = 720*0.28 ≈ 202). Distance = baseX - 202 - width/2.
+  // Reaction window (ms) = time from spawn until first collision at corgi
+  // world-x ≈ 720 * 0.28 = 202.
   const corgiX = 720 * 0.28;
   const collisionDistance = first.x - first.width / 2 - corgiX;
   const reactionMs = (collisionDistance / gameSpeed) * 1000;
@@ -356,17 +493,12 @@ export function generateCandidate(
   return { score, gameSpeed, tier, kind, fences, clusterSpan, nextRunwayPx, reactionMs };
 }
 
-/**
- * Generate a VALIDATED candidate. Retries up to `maxAttempts` times, then
- * falls back to a guaranteed-safe single-short-hurdle. Returns the candidate
- * plus a `rejectedCandidates` count so telemetry can be logged.
- */
 export function generateValidated(
   score: number,
   gameSpeed: number,
   rng: Rng,
   recentHistory: PatternKind[] = [],
-  maxAttempts = 6,
+  maxAttempts = 8,
 ): { candidate: HurdleCandidate; rejected: number } {
   let rejected = 0;
   for (let i = 0; i < maxAttempts; i++) {
@@ -374,15 +506,16 @@ export function generateValidated(
     if (validate(c).ok) return { candidate: c, rejected };
     rejected += 1;
   }
-  // Fallback — guaranteed-safe single short hurdle with generous runway.
+  // Guaranteed-safe fallback — a single short, narrow hurdle with generous
+  // runway. Never rejected.
   const tier = tierFor(score);
   const arc = jumpArc();
   const safe: HurdleCandidate = {
     score, gameSpeed, tier,
     kind: 'single',
-    fences: [{ x: 720 + 120, height: tier.heights.min + 10, width: tier.widths.min + 10 }],
-    clusterSpan: tier.widths.min + 10,
-    nextRunwayPx: arc.horizontalRangeAtSpeed(gameSpeed) * 0.9 + 100,
+    fences: [{ x: 720 + 120, height: tier.heights.min + 5, width: tier.widths.min + 5 }],
+    clusterSpan: tier.widths.min + 5,
+    nextRunwayPx: arc.horizontalRangeAtSpeed(gameSpeed) * 0.9 + 220,
     reactionMs: 9999,
   };
   return { candidate: safe, rejected };

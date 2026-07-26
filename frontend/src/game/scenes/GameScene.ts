@@ -6,6 +6,7 @@ import { services } from '@/services';
 import {
   generateValidated,
   validate,
+  speedForScore as hgSpeedForScore,
   type HurdleCandidate as HgCandidate,
   type PatternKind,
   type Rng as HgRng,
@@ -709,9 +710,12 @@ export class GameScene extends Phaser.Scene {
     // Obstacle collisions
     this.checkObstacleCollisions(time);
 
-    // Difficulty ramp: score increases over time
-    // (score ticks per obstacle pass; speed climbs continuously with distance)
-    this.targetSpeed = Math.min(760, 340 + this.score * 8);
+    // Difficulty ramp — smooth piecewise-linear curve from the shared
+    // HurdleGenerator module. Matches the approved targets:
+    //   score 0→340, 20→390, 50→440, 75→480, 100→520, 150→580, 200→630,
+    //   asymptote 680.  Never reaches the old 760 max, so early / mid game
+    //   no longer feels like a speed wall.
+    this.targetSpeed = hgSpeedForScore(this.score);
   }
 
   private spawnNext(): void {

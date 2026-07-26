@@ -26,7 +26,7 @@ import {
   generateValidated, validate,
 } from '../src/game/systems/HurdleGenerator.ts';
 
-const TOTAL_SEQUENCES = 10000;
+const TOTAL_SEQUENCES = 25000;
 const OBSTACLES_PER_SEQUENCE = 30;
 
 const stats = {
@@ -43,6 +43,12 @@ const stats = {
   minReactionMs: Infinity,
   maxReactionMs: -Infinity,
   perTier: {},
+  perKind: {},
+  invariantFailures: {
+    tripleBefore101: 0,
+    doubleBefore31: 0,
+    belowReactionFloor: 0,
+  },
   failures: [],
 };
 
@@ -64,11 +70,13 @@ console.log('');
 // Sweep across all difficulty tiers evenly so we exercise the full behaviour.
 const scoreSamples = [];
 for (const t of TIERS) {
-  const span = Math.max(1, t.scoreMax === 9999 ? 30 : (t.scoreMax - t.scoreMin + 1));
+  const span = Math.max(1, t.scoreMax === 9999 ? 40 : (t.scoreMax - t.scoreMin + 1));
   for (let s = t.scoreMin; s <= Math.min(t.scoreMax, t.scoreMin + span - 1); s++) scoreSamples.push(s);
 }
-// Add extra samples at high scores (50-99) to exercise the max-speed regime.
-for (let s = 50; s < 100; s++) scoreSamples.push(s);
+// Anchor stress points requested by the spec: 0/10/20/30/50/75/100/125/150/175/200/250+
+for (const s of [0, 10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300]) {
+  for (let k = 0; k < 40; k++) scoreSamples.push(s);
+}
 
 for (let seqIdx = 0; seqIdx < TOTAL_SEQUENCES; seqIdx++) {
   const seed = 1000 + seqIdx;
@@ -129,6 +137,13 @@ for (let seqIdx = 0; seqIdx < TOTAL_SEQUENCES; seqIdx++) {
     stats.maxReactionMs = Math.max(stats.maxReactionMs, candidate.reactionMs);
     const tierName = `${candidate.tier.scoreMin}-${candidate.tier.scoreMax}`;
     stats.perTier[tierName] = (stats.perTier[tierName] || 0) + 1;
+    stats.perKind[candidate.kind] = (stats.perKind[candidate.kind] || 0) + 1;
+    // Spec-mandated invariants — track violations separately from `failures`.
+    if (candidate.kind === 'triple' && score < 101) stats.invariantFailures.tripleBefore101 += 1;
+    if ((candidate.kind === 'double-mid' || candidate.kind === 'double-close' || candidate.kind === 'wide-double') && score < 31) {
+      stats.invariantFailures.doubleBefore31 += 1;
+    }
+    if (candidate.reactionMs < candidate.tier.minReactionMs) stats.invariantFailures.belowReactionFloor += 1;
 
     history.push(candidate.kind);
     if (history.length > 5) history.shift();
@@ -171,15 +186,32 @@ for (const t of TIERS) {
   const k = `${t.scoreMin}-${t.scoreMax}`;
   console.log(`  ${k}: ${(stats.perTier[k] || 0)}`);
 }
+console.log(`Per-kind candidate counts:`);
+for (const [k, v] of Object.entries(stats.perKind).sort((a,b) => b[1]-a[1])) {
+  console.log(`  ${k}: ${v}  (${(100*v/stats.candidates).toFixed(1)}%)`);
+}
+console.log(`Spec invariants:`);
+console.log(`  triples before score 101:      ${stats.invariantFailures.tripleBefore101}`);
+console.log(`  doubles before score 31:       ${stats.invariantFailures.doubleBefore31}`);
+console.log(`  below-tier reaction window:    ${stats.invariantFailures.belowReactionFloor}`);
 console.log(``);
-if (stats.failures.length > 0) {
+// Sample the speed curve too.
+console.log(`Speed curve (score → gameSpeed):`);
+for (const s of [0, 10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300]) {
+  console.log(`  score ${s.toString().padStart(3)}: ${speedForScore(s)} px/s`);
+}
+console.log(``);
+const invariantFail = stats.invariantFailures.tripleBefore101 + stats.invariantFailures.doubleBefore31 + stats.invariantFailures.belowReactionFloor;
+if (stats.failures.length > 0 || invariantFail > 0) {
   console.log(`FAILURES:`);
   for (const f of stats.failures.slice(0, 20)) {
     console.log(`  seed=${f.seed} at obstacle ${f.i}: ${f.reasons.join(', ')}`);
-    console.log(`    candidate: ${JSON.stringify(f.candidate)}`);
+  }
+  if (invariantFail > 0) {
+    console.log(`Invariant violations: ${invariantFail}`);
   }
   process.exit(1);
 } else {
-  console.log(`PASS — zero impossible sequences across ${stats.candidates} candidates.`);
+  console.log(`PASS — zero impossible sequences, zero invariant violations across ${stats.candidates} candidates.`);
   process.exit(0);
 }
