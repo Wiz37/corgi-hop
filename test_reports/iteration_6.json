@@ -1,0 +1,81 @@
+{
+  "summary": "PASS — Classic Corgi face-transparency bug is FIXED across all four gameplay pose PNGs (corgi_jump, corgi_fall, corgi_land, corgi_hit) and the run sheet. Pixel-level scan of each PNG shows 0 or ≤6 fully-transparent pixels that heuristically satisfy the 'inside silhouette' probe test, and the residual pixels are isolated single-pixel probe-heuristic false-positives sitting in fully-transparent voids (all/most 8-neighbors are alpha=0) — none are visible face holes. Dark-checker composite renders of all 4 poses confirm every required face part is fully opaque: brown eyes on white sclera, cream-white muzzle patch, black nose, open pink tongue with white teeth, cheeks, forehead, both ears with inner-ear pink, and X-eyes on OPAQUE fur for corgi_hit. Live gameplay verification at http://localhost:3000 (mobile viewport 390x844, Classic Corgi default) confirms: fresh PLAY → running frames opaque; SPACE-triggered jump shows opaque corgi mid-rise over the tree with visible tongue and body; falling/landing frames opaque; game-over modal (REVIVE(Ad)/2x TREATS(Ad)/RESTART/MAIN MENU) renders correctly on top of a fully-opaque scene. No parallax background is visible through the corgi's face or body in any frame. No game regressions: PLAY works, HUD (BEST 0, score '0', pause, bone, TAP TO JUMP paw, TEST ADS badge) renders, gameplay parallax scrolls, fences+bones spawn, and the game-over flow triggers. Console has only permissible Vite HMR wss://localhost websocket ERR_CONNECTION_REFUSED noise (expected in this preview env) and Chromium GL_CLOSE_PATH_NV WebGL driver perf warnings — NO Phaser/game runtime errors, NO missing-texture errors, NO red-screen crashes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Classic Corgi pose PNG edges (asset-level, cosmetic only)",
+        "issues": [
+          "Composited-over-dark-checker inspection reveals faint scattered white/off-white noise pixels OUTSIDE the outer dark-brown outline of the corgi silhouette on corgi_jump/corgi_fall/corgi_land — a byproduct of the repair script's 2-pass 1-2px hole-close loop pulling some near-edge margin pixels to opaque. This is INVISIBLE at the in-game render size (~60-90px wide) against the sky/parallax background and does NOT form a solid rectangle halo, so it does not violate the pass criteria. Cosmetic only; report to main agent as an FYI in case a future asset regen wants a cleaner outer margin."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "hole_scan_per_file": {
+    "corgi_jump.png": {"size": "777x777", "holes_inside_silhouette": 0, "verdict": "PASS"},
+    "corgi_fall.png": {"size": "1024x1024", "holes_inside_silhouette": 0, "verdict": "PASS"},
+    "corgi_land.png": {"size": "1408x768", "holes_inside_silhouette": 3, "verdict": "PASS - all 3 are heuristic false positives; 1 is a fully-isolated pixel (all 8 neighbors alpha=0) in a transparent void; 2 near y=622 are in the gap between rear paws (design-intended transparent gap, not a face hole)"},
+    "corgi_hit.png": {"size": "1024x1024", "holes_inside_silhouette": 0, "verdict": "PASS"},
+    "corgi_run_sheet.png": {"size": "2928x352", "holes_inside_silhouette": 6, "verdict": "PASS - all 6 are single-pixel probe-heuristic false positives with most neighbors alpha=0, invisible in-game (verified live)"}
+  },
+  "face_part_opacity_verification": {
+    "eyes_and_sclera": "PASS - opaque brown pupil + cream sclera visible in jump/fall/land; X-marks on opaque fur in hit",
+    "muzzle_white_patch": "PASS - solid cream/white in all 4 poses, no sky bleed-through",
+    "cheeks": "PASS - opaque orange fur",
+    "nose": "PASS - solid black in all 4 poses",
+    "mouth_and_tongue": "PASS - opaque outline, pink tongue, white teeth visible in jump/fall/land; hanging tongue visible in hit",
+    "forehead": "PASS - solid orange fur with cream forehead-blaze visible",
+    "ears": "PASS - both ears opaque with inner-ear pink"
+  },
+  "regression": {
+    "game_load": "PASS - Phaser boot + assets load in ~4s",
+    "menu_play_button": "PASS - opens GameScene, HUDScene mounts",
+    "space_jump_input": "PASS - SPACE triggers jump→peak→fall→land pose sequence",
+    "gameover_modal": "PASS - REVIVE(Ad)/2x TREATS(Ad)/RESTART/MAIN MENU renders correctly",
+    "console_errors": "NONE game-relevant. Only Vite HMR wss://localhost/?token=... ERR_CONNECTION_REFUSED (preview infra) + GL_CLOSE_PATH_NV WebGL driver perf warnings"
+  },
+  "artifacts": {
+    "composites_over_dark_checker": [
+      "/app/test_reports/composites/corgi_jump.png",
+      "/app/test_reports/composites/corgi_fall.png",
+      "/app/test_reports/composites/corgi_land.png",
+      "/app/test_reports/composites/corgi_hit.png",
+      "/app/test_reports/composites/corgi_run_sheet.png"
+    ],
+    "in_game_screenshots": [
+      "/app/test_reports/gameplay/00_menu.jpeg",
+      "/app/test_reports/gameplay/01_game_start.jpeg",
+      "/app/test_reports/gameplay/02_running.jpeg",
+      "/app/test_reports/gameplay/03_jump_rise.jpeg",
+      "/app/test_reports/gameplay/04_jump_peak.jpeg",
+      "/app/test_reports/gameplay/05_falling.jpeg",
+      "/app/test_reports/gameplay/06_landing.jpeg",
+      "/app/test_reports/gameplay/07_post_landing.jpeg",
+      "/app/test_reports/gameplay/08_jump2_rise.jpeg",
+      "/app/test_reports/gameplay/09_jump2_fall.jpeg",
+      "/app/test_reports/gameplay/11_gameover.jpeg"
+    ],
+    "verification_scripts": [
+      "/app/frontend/scripts/verify_holes.py",
+      "/app/frontend/scripts/locate_holes.py"
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_6.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "repair_classic_face.py:92-107 — the 2-pass 6-of-8-neighbors gap-close loop fires when 6/8 neighbors are alpha>200, which occasionally catches pixels just OUTSIDE the outer dark-brown outline where the outline is a thick continuous stroke (6 of the 8 neighbors are outline pixels). This is what produces the faint scattered off-white noise on the outer margin visible when composited over dark backgrounds. Consider requiring at least one of the 8 neighbors to be a 'body-fill' color (orange/cream, not outline-brown) before filling. Cosmetic only — no in-game impact."
+  ],
+  "updated_files": [
+    "/app/frontend/scripts/verify_holes.py (NEW - hole-scan verification tool)",
+    "/app/frontend/scripts/locate_holes.py (NEW - hole-location diagnostic tool)"
+  ],
+  "success_rate": {"backend": "n/a (frontend-asset verification only)", "frontend": "100% for face-opacity pass criteria (all 4 poses + run sheet); 100% for gameplay regression"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Two reusable verification scripts left in /app/frontend/scripts/: verify_holes.py counts probe-hit transparent pixels per PNG; locate_holes.py prints their (x,y) + 8-neighbor alphas so future regressions can be triaged. The 3/6 residual counts on corgi_land / corgi_run_sheet are heuristic-only false positives — the neighbor-alpha diagnostic reveals they sit in transparent voids, not inside the silhouette. Menu coord system unchanged from iteration 5: mobile 390x844, canvas at page (0,113) → 390x693 CSS. PLAY center ~ page (195, ~419). SPACE keypress or a tap on the paw button both trigger jump. Vite HMR websocket ERR_CONNECTION_REFUSED errors in console are expected preview-infra noise and can be filtered when checking for real game errors.",
+  "rca_of_issue": "Original bug: an earlier global near-white cleanup pass in the asset pipeline zeroed alpha for every near-white pixel — including the corgi's muzzle patch, whites of eyes, tongue highlights and paw pads — leaving see-through holes in the face+body silhouette. Fix implemented by repair_classic_face.py: for each fully-transparent pixel, run 8-direction outward probes at R=max(14, min(w,h)/40); if >=4 probes hit dark-brown outline pixels, restore alpha=255 keeping original RGB (or cream fallback if RGB was near-black). Followed by a two-pass 6-of-8-neighbors gap-close for 1-2px slivers. Verification confirms 0 visible holes remaining in the face for all 4 gameplay poses."
+}
