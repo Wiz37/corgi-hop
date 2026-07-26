@@ -65,17 +65,16 @@ export class GameScene extends Phaser.Scene {
     // Physics world bounds (leave floor open — we handle ground manually).
     this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    // Scatter some static foreground decor to give the scene depth
-    // (bushes/rocks/flowers on the horizon line — they scroll manually).
-    this.addStaticDecor();
-
     // Corgi
     const cd = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
     const runTex = this.textures.exists('corgi_run') ? 'corgi_run' : 'corgi_idle';
     this.corgi = this.physics.add.sprite(GAME_WIDTH * 0.28, this.groundY - 20, runTex, 0);
-    this.corgi.setDepth(12);
+    this.corgi.setDepth(15);        // above foreground foliage
+    this.corgi.setAlpha(1);         // guaranteed fully opaque
+    this.corgi.clearTint();         // never tint the classic corgi
     this.corgi.setOrigin(0.5, 1);
     this.corgi.setDisplaySize(190, 180);
+    this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
     if (cd.tint) this.corgi.setTint(cd.tint);
     if (this.anims.exists('run')) this.corgi.play('run');
     // Collision box in physics body units — since arcade physics bodies are
@@ -104,6 +103,10 @@ export class GameScene extends Phaser.Scene {
 
     this.obstacles = this.add.group();
     this.treats = this.add.group();
+
+    // Scatter static decor (bushes / rocks / flowers) properly anchored to
+    // the ground. Placed AFTER the corgi so we can use the same groundY.
+    this.addStaticDecor();
 
     // Start with a starting shield if the player has one from Starter Pack.
     if (services.purchases.consumeStartingShield()) {
@@ -142,8 +145,12 @@ export class GameScene extends Phaser.Scene {
   private setCorgiTexture(key: string, frame: number | string = 0): void {
     if (!this.textures.exists(key)) return;
     this.corgi.setTexture(key, frame);
-    // Keep display size constant regardless of the source texture's native size.
+    // Guarantee display size, opacity, blend mode remain consistent between
+    // texture swaps (previously the corgi looked semi-transparent because
+    // an off-frame alpha reset lingered from Phaser's internal state).
     this.corgi.setDisplaySize(190, 180);
+    this.corgi.setAlpha(1);
+    this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
   }
 
   public tryJump = (): void => {
@@ -185,10 +192,13 @@ export class GameScene extends Phaser.Scene {
 
     // Move obstacles + treats
     const dx = this.gameSpeed * dt;
-    // Scroll static decor
+    // Scroll static decor (bushes / trees / rocks) at their per-item rate,
+    // wrapping around off the left edge so the horizon feels continuously
+    // populated.
     for (const d of this.decor) {
-      d.x -= (d as any).__scroll * dt * (this.gameSpeed / 340);
-      if (d.x < -200) d.x += 8 * 480; // wrap around
+      const scrollRate = (d as any).__scroll ?? 60;
+      d.x -= scrollRate * dt * (this.gameSpeed / 340);
+      if (d.x < -160) d.x += GAME_WIDTH + 640; // re-enter from the right
     }
     this.obstacles.getChildren().forEach((o) => {
       const s = o as Phaser.GameObjects.Sprite & { hasBeenPassed?: boolean };
@@ -269,40 +279,86 @@ export class GameScene extends Phaser.Scene {
 
   private spawnNext(): void {
     const score = this.score;
-    // Fair progression: only easy fences early on.
-    let variant: 'single' | 'double' | 'wide-double' = 'single';
-    if (score >= 18) {
-      const r = Math.random();
-      variant = r < 0.55 ? 'single' : r < 0.85 ? 'double' : 'wide-double';
-    } else if (score >= 8) {
-      variant = Math.random() < 0.75 ? 'single' : 'double';
+
+    // ---- Difficulty tiers (fair progression, more variety than before) ----
+    // Each tier is a weighted table of obstacle patterns. Weights are picked so
+    // that early runs stay easy and every run has different rhythm.
+    type Pattern = 'single' | 'single-tall' | 'double-close' | 'double-mid' | 'wide-double' | 'triple';
+    let table: Array<[Pattern, number]>;
+    if (score < 4) {
+      table = [['single', 100]];
+    } else if (score < 10) {
+      table = [['single', 85], ['single-tall', 15]];
+    } else if (score < 20) {
+      table = [['single', 55], ['single-tall', 20], ['double-mid', 25]];
+    } else if (score < 32) {
+      table = [['single', 40], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 5]];
+    } else {
+      table = [['single', 25], ['single-tall', 20], ['double-mid', 20], ['double-close', 15], ['wide-double', 15], ['triple', 5]];
     }
+    const totalW = table.reduce((s, [, w]) => s + w, 0);
+    let roll = Math.random() * totalW;
+    let variant: Pattern = 'single';
+    for (const [p, w] of table) { roll -= w; if (roll <= 0) { variant = p; break; } }
 
     const baseX = GAME_WIDTH + 120;
-    const fenceH = 150; // display height of fence
+    const shortH = 140;
+    const tallH = 190;
 
-    if (variant === 'single') {
-      this.spawnFence(baseX, fenceH);
-      this.nextGap = Phaser.Math.Between(560, 700);
-    } else if (variant === 'double') {
-      this.spawnFence(baseX, fenceH);
-      this.spawnFence(baseX + 220, fenceH);
-      this.nextGap = Phaser.Math.Between(620, 780);
-    } else {
-      this.spawnFence(baseX, fenceH);
-      this.spawnFence(baseX + 360, fenceH);
-      this.nextGap = Phaser.Math.Between(700, 860);
+    // ---- Spawn each pattern with randomised local spacing ----
+    switch (variant) {
+      case 'single':
+        this.spawnFence(baseX, shortH);
+        this.nextGap = Phaser.Math.Between(560, 780);
+        break;
+      case 'single-tall':
+        this.spawnFence(baseX, tallH);
+        this.nextGap = Phaser.Math.Between(620, 820);
+        break;
+      case 'double-close': {
+        const gap = Phaser.Math.Between(170, 210);
+        this.spawnFence(baseX, shortH);
+        this.spawnFence(baseX + gap, shortH);
+        this.nextGap = Phaser.Math.Between(660, 820);
+        break;
+      }
+      case 'double-mid': {
+        const gap = Phaser.Math.Between(240, 320);
+        this.spawnFence(baseX, shortH);
+        this.spawnFence(baseX + gap, Phaser.Math.RND.pick([shortH, tallH]));
+        this.nextGap = Phaser.Math.Between(700, 860);
+        break;
+      }
+      case 'wide-double': {
+        const gap = Phaser.Math.Between(360, 440);
+        this.spawnFence(baseX, shortH);
+        this.spawnFence(baseX + gap, shortH);
+        this.nextGap = Phaser.Math.Between(760, 900);
+        break;
+      }
+      case 'triple': {
+        const g1 = Phaser.Math.Between(220, 280);
+        const g2 = Phaser.Math.Between(220, 280);
+        this.spawnFence(baseX, shortH);
+        this.spawnFence(baseX + g1, shortH);
+        this.spawnFence(baseX + g1 + g2, shortH);
+        this.nextGap = Phaser.Math.Between(820, 980);
+        break;
+      }
     }
 
-    // Occasionally spawn a treat arc above the fence(s)
-    if (Math.random() < 0.55) {
-      const tx = baseX + (variant === 'wide-double' ? 180 : variant === 'double' ? 110 : 40);
-      const ty = this.groundY - fenceH - 40 - Math.random() * 90;
-      this.spawnTreat(tx, ty);
+    // Randomised treats — sometimes over the fence, sometimes between them
+    if (Math.random() < 0.6) {
+      const treatCount = Math.random() < 0.25 ? 3 : Math.random() < 0.5 ? 2 : 1;
+      for (let i = 0; i < treatCount; i++) {
+        const tx = baseX + Phaser.Math.Between(20, 260) + i * 70;
+        const ty = this.groundY - shortH - 30 - Phaser.Math.Between(0, 120);
+        this.spawnTreat(tx, ty);
+      }
     }
 
     // Ensure spawn gap accounts for game speed (higher speed = longer gap so it's fair)
-    const speedFactor = this.gameSpeed / 340;
+    const speedFactor = Math.max(1, this.gameSpeed / 340);
     this.lastSpawnX = GAME_WIDTH + this.nextGap * speedFactor;
   }
 
@@ -441,27 +497,33 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: c, scale: 1.6, alpha: 0, duration: 500, onComplete: () => c.destroy() });
   }
 
-  /** Sprinkle scrolling background decor (bushes on horizon, distant trees). */
+  /** Sprinkle scrolling background decor grounded to the running path. */
   private addStaticDecor(): void {
-    // We spawn a handful of "background" bushes / trees that scroll left with
-    // the world at the same rate as the hills. They're depth 4.5 so they sit
-    // between the hills and the grass.
-    const items: Array<{ key: string; y: number; scale: number }> = [
-      { key: 'bush',        y: this.groundY - 90, scale: 0.28 },
-      { key: 'bush',        y: this.groundY - 85, scale: 0.22 },
-      { key: 'tree_right',  y: this.groundY - 30, scale: 0.35 },
-      { key: 'tree_left',   y: this.groundY - 30, scale: 0.32 },
-      { key: 'rock',        y: this.groundY + 40, scale: 0.24 },
+    // All items use `origin (0.5, 1)` so `y` is where the ITEM'S FEET land.
+    // We anchor everything to `groundY` (or a small vertical offset) so
+    // nothing floats above the horizon line.
+    const items: Array<{ key: string; y: number; scale: number; depth: number; alpha?: number; scroll: number }> = [
+      // Big trees sit slightly behind the fence line so their roots still
+      // touch the grass strip.
+      { key: 'tree_left',  y: this.groundY - 4,  scale: 0.35, depth: 4.6, alpha: 0.95, scroll: 60 },
+      { key: 'tree_right', y: this.groundY - 4,  scale: 0.32, depth: 4.6, alpha: 0.95, scroll: 60 },
+      // Small bushes hug the ground line
+      { key: 'bush',       y: this.groundY + 8,  scale: 0.22, depth: 4.7, alpha: 1,    scroll: 90 },
+      { key: 'bush',       y: this.groundY + 12, scale: 0.20, depth: 4.7, alpha: 1,    scroll: 90 },
+      // Rocks between the corgi and the horizon
+      { key: 'rock',       y: this.groundY + 18, scale: 0.20, depth: 4.7, alpha: 1,    scroll: 90 },
     ];
-    const spacing = 480;
-    for (let i = 0; i < 8; i++) {
+    const spacing = 520;
+    for (let i = 0; i < 10; i++) {
       const spec = items[i % items.length];
       if (!this.textures.exists(spec.key)) continue;
-      const x = 200 + i * spacing + Phaser.Math.Between(-60, 60);
+      const x = 240 + i * spacing + Phaser.Math.Between(-70, 70);
       const img = this.add.image(x, spec.y, spec.key)
-        .setOrigin(0.5, 1).setDepth(4.5).setScale(spec.scale).setAlpha(0.9);
-      // Tag with scroll speed so we can move them each frame.
-      (img as any).__scroll = 60;   // px/s at base speed
+        .setOrigin(0.5, 1)
+        .setDepth(spec.depth)
+        .setScale(spec.scale)
+        .setAlpha(spec.alpha ?? 1);
+      (img as any).__scroll = spec.scroll;
       this.decor.push(img);
     }
   }

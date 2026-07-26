@@ -55,9 +55,28 @@ export class HUDScene extends Phaser.Scene {
     this.treatsText = tt.text;
 
     // ---- Bottom translucent paw jump control ----
-    const paw = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT - 230, 'ui_paw_button')
+    // Draw a solid filled circle behind the paw texture so the control
+    // reads clearly as a filled premium button (not a hollow ring).
+    const pawX = GAME_WIDTH / 2;
+    const pawY = GAME_HEIGHT - 230;
+    const pawR = 118;
+    const pawBg = this.add.graphics().setDepth(49);
+    // Drop shadow underlay
+    pawBg.fillStyle(0x18223a, 0.5);
+    pawBg.fillCircle(pawX + 3, pawY + 6, pawR);
+    // Main fill (bright, near-opaque)
+    pawBg.fillStyle(0xffffff, 0.55);
+    pawBg.fillCircle(pawX, pawY, pawR);
+    // Inner highlight for depth
+    pawBg.fillStyle(0xffffff, 0.35);
+    pawBg.fillCircle(pawX - pawR * 0.3, pawY - pawR * 0.3, pawR * 0.55);
+    // Ring stroke
+    pawBg.lineStyle(6, 0xffffff, 0.9);
+    pawBg.strokeCircle(pawX, pawY, pawR);
+
+    const paw = this.add.image(pawX, pawY, 'ui_paw_button')
       .setDisplaySize(230, 230)
-      .setAlpha(0.9)
+      .setAlpha(1)
       .setDepth(50);
     paw.setInteractive({ useHandCursor: true });
     paw.setData('testId', 'hud-jump-button');
