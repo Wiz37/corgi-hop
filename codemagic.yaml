@@ -235,66 +235,23 @@ workflows:
             --archive-flags   "-destination 'generic/platform=iOS'"
 
       # -------------------------------------------------------------------
-      - name: Locate generated IPA + stage it at the artifact glob path
-        # xcode-project build-ipa is documented to write to
-        # `<cwd>/build/ios/ipa/*.ipa`, which — with this workflow's
-        # `working_directory: frontend` — would resolve to
-        # `$CM_BUILD_DIR/frontend/build/ios/ipa/*.ipa`. In practice some
-        # Codemagic CLI versions resolve their own $FCI_BUILD_DIR base
-        # differently and write the IPA elsewhere. So we:
-        #   1. do a REPOSITORY-WIDE `find` for *.ipa and log every hit,
-        #   2. if any IPA lands OUTSIDE frontend/build/ios/ipa/, copy it
-        #      IN so the artifacts glob `frontend/build/ios/ipa/*.ipa`
-        #      always matches. Copy is idempotent (same-name overwrite).
-        # This is a pure diagnostic + placement step — no signing, no
-        # gameplay, no source changes.
+      - name: Stage signed IPA for Codemagic artifacts
         script: |
-          set -eux
-          echo "=== find $CM_BUILD_DIR -type f -name '*.ipa' ==="
-          find "$CM_BUILD_DIR" -type f -name "*.ipa" -print || true
-
-          IPA_COUNT=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | wc -l | tr -d ' ')
-          echo "IPA files found under \$CM_BUILD_DIR: $IPA_COUNT"
-
-          if [ "$IPA_COUNT" -eq 0 ]; then
-            echo "FATAL: no .ipa produced by xcode-project build-ipa" >&2
-            echo "Contents under $CM_BUILD_DIR/frontend/build (if any):" >&2
-            find "$CM_BUILD_DIR/frontend/build" -maxdepth 4 -print 2>&1 | sed 's/^/  /' >&2 || true
-            echo "Contents under $CM_BUILD_DIR/build (if any):" >&2
-            find "$CM_BUILD_DIR/build" -maxdepth 4 -print 2>&1 | sed 's/^/  /' >&2 || true
-            exit 1
-          fi
-
-          # Guarantee the artifact glob `frontend/build/ios/ipa/*.ipa` matches
-          # regardless of where xcode-project build-ipa actually wrote the file.
-          TARGET_DIR="$CM_BUILD_DIR/frontend/build/ios/ipa"
-          mkdir -p "$TARGET_DIR"
-          find "$CM_BUILD_DIR" -type f -name "*.ipa" -print0 | while IFS= read -r -d '' ipa; do
-            # Skip files ALREADY inside the target dir — nothing to move.
-            case "$ipa" in
-              "$TARGET_DIR"/*) echo "IPA already at target: $ipa" ;;
-              *)               echo "Staging IPA at target: $ipa → $TARGET_DIR/"
-                               cp -f "$ipa" "$TARGET_DIR/" ;;
-            esac
-          done
-
-          echo "=== final $TARGET_DIR contents ==="
-          ls -lh "$TARGET_DIR"
-          # Second sanity check: the artifact glob MUST now match ≥1 file.
-          STAGED=$(find "$TARGET_DIR" -maxdepth 1 -type f -name "*.ipa" | wc -l | tr -d ' ')
-          echo "Staged IPAs at artifact glob location: $STAGED"
-          if [ "$STAGED" -eq 0 ]; then
-            echo "FATAL: could not stage IPA at $TARGET_DIR" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          SOURCE_IPA="$CM_BUILD_DIR/frontend/build/ios/ipa/App.ipa"
+          ARTIFACT_DIR="$CM_BUILD_DIR/artifacts"
+          ARTIFACT_IPA="$ARTIFACT_DIR/App.ipa"
+          test -f "$SOURCE_IPA"
+          test -s "$SOURCE_IPA"
+          mkdir -p "$ARTIFACT_DIR"
+          cp -f "$SOURCE_IPA" "$ARTIFACT_IPA"
+          test -f "$ARTIFACT_IPA"
+          test -s "$ARTIFACT_IPA"
+          echo "Staged IPA:"
+          ls -lh "$ARTIFACT_IPA"
 
     artifacts:
-      # Direct path to the exact IPA file the staging script above
-      # guarantees exists. Codemagic's App Store Connect publisher scans
-      # this list for `.ipa`/`.pkg` entries — an exact filename is more
-      # reliable than a glob and stays consistent across CLI versions.
-      # The xcodebuild log glob stays alongside for diagnostics.
-      - frontend/build/ios/ipa/App.ipa
+      - artifacts/App.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
