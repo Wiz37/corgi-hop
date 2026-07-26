@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 import Capacitor
 
 @UIApplicationMain
@@ -6,8 +7,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    private func configureGameAudio() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // Playback keeps game audio audible even when the iPhone Ring/Silent
+            // switch is enabled. mixWithOthers avoids unnecessarily stopping a
+            // user's existing music or podcast.
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            print("[Corgi Hop audio] AVAudioSession setup failed: \(error)")
+        }
+    }
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        configureGameAudio()
         return true
     }
 
@@ -26,7 +40,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // Phone calls, Siri, alarms, and route changes can deactivate the
+        // session. Re-activate it whenever the app becomes active again.
+        configureGameAudio()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -45,5 +61,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
+
+}
 
 }
