@@ -91,19 +91,11 @@ export class GameScene extends Phaser.Scene {
     this.corgi.setBlendMode(Phaser.BlendModes.NORMAL);
     if (isClassic && this.anims.exists('run')) {
       this.corgi.play('run');
-    } else if (!isClassic) {
-      // Approved-artwork safe fallback: static outfit texture + subtle 2 px
-      // vertical bounce tween so the outfit appears to be running.
-      this.corgi.anims.stop();
-      this.tweens.add({
-        targets: this.corgi,
-        y: this.corgi.y - 2,
-        duration: 220,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
     }
+    // NOTE: no bounce tween on `y` — that would fight arcade-physics gravity
+    // and prevent jumps for premium corgis. The subtle running bounce for
+    // premium outfits is applied as a scaleY oscillation in `update()` only
+    // while the corgi is on the ground. See `applyRunBounce()`.
     // Collision box in physics body units — since arcade physics bodies are
     // sized in *source texture* units, compute from the source dimensions so the
     // hitbox stays consistent regardless of displaySize.
@@ -226,6 +218,27 @@ export class GameScene extends Phaser.Scene {
     this.layers.grass.tilePositionX      += PARALLAX_SPEEDS.grass * dt * spd;
     this.layers.path.tilePositionX       += this.gameSpeed * dt;
     this.layers.foreground.tilePositionX += this.gameSpeed * dt * 1.15;
+
+    // ---- Subtle running bounce for PREMIUM corgis (physics-safe) ----
+    // Classic uses the animated sprite-sheet, so it doesn't need a fake
+    // bounce. Premium outfits are static PNGs — a scaleY oscillation ONLY
+    // while the corgi is grounded provides a "trotting" feel without ever
+    // fighting arcade physics on Y.
+    {
+      const def = CORGIS.find((c) => c.id === gameState.selectedCorgi) ?? CORGIS[0];
+      const isPremium = def.id !== 'classic';
+      const onGround = this.corgi.y >= this.groundY - 1
+                    && (this.corgi.body as Phaser.Physics.Arcade.Body).velocity.y === 0;
+      if (isPremium && onGround && !this.ended) {
+        // Two oscillations per second — subtle 1-2 px vertical bob via scaleY.
+        const t = time / 1000;
+        const bob = Math.sin(t * 12) * 0.02; // ±2% scaleY
+        this.corgi.setScale(this.corgi.scaleX, Math.max(0.94, 1 + bob));
+      } else if (isPremium) {
+        // Reset to normal scaleY while airborne / after death.
+        this.corgi.setScale(this.corgi.scaleX, 1);
+      }
+    }
 
     // Move obstacles + treats
     const dx = this.gameSpeed * dt;
@@ -438,8 +451,18 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'triple': {
-        const g1 = clampCluster(Phaser.Math.Between(200, 260));
-        const g2 = clampCluster(Phaser.Math.Between(200, 260));
+        // Total cluster span must fit within a single jump. Distribute the
+        // two internal gaps proportionally if they'd exceed maxClusterSpan.
+        let g1 = Phaser.Math.Between(200, 260);
+        let g2 = Phaser.Math.Between(200, 260);
+        const totalWithFences = g1 + g2 + fenceW * 2;
+        if (totalWithFences > maxClusterSpan) {
+          const scale = (maxClusterSpan - fenceW * 2) / (g1 + g2);
+          g1 = Math.max(160, Math.floor(g1 * scale));
+          g2 = Math.max(160, Math.floor(g2 * scale));
+        }
+        g1 = clampCluster(g1);
+        g2 = clampCluster(g2);
         this.spawnFence(baseX, shortH);
         this.spawnFence(baseX + g1, shortH);
         this.spawnFence(baseX + g1 + g2, shortH);

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState } from '@/game/systems/GameState';
-import { drawCompactTrophy, drawTreatsPill, drawCircleControl } from '@/game/ui/PolishedHUD';
+import { drawCompactTrophy, drawCompactBones, drawCircleControl } from '@/game/ui/PolishedHUD';
 import type { GameScene } from './GameScene';
 
 /**
@@ -52,8 +52,8 @@ export class HUDScene extends Phaser.Scene {
       this.scene.launch('PauseScene');
     });
 
-    // ---- Treats pill (right side, below pause) ----
-    const tt = drawTreatsPill(this, GAME_WIDTH - 22, 130, gameState.treats, 'top-right');
+    // ---- Compact borderless bones counter (top-right, below pause) ----
+    const tt = drawCompactBones(this, GAME_WIDTH - 22, 120, gameState.treats, 'top-right');
     this.treatsText = tt.text;
 
     // ---- Bottom translucent paw jump control ----

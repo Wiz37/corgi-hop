@@ -3,7 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { buildParallax, scatterMenuDecor, type ParallaxLayers } from '@/game/systems/Parallax';
 import { gameState, CORGIS } from '@/game/systems/GameState';
 import { PolishedButton, CircleIconButton } from '@/game/ui/PolishedButton';
-import { drawTrophyPanel, drawTreatsPill } from '@/game/ui/PolishedHUD';
+import { drawCompactTrophy, drawCompactBones } from '@/game/ui/PolishedHUD';
 
 /**
  * MenuScene — polished illustrated countryside title screen.
@@ -80,9 +80,10 @@ export class MenuScene extends Phaser.Scene {
       this.tweens.add({ targets: t, scale: 1.03, angle: -1, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
-    // ---- Top-left trophy + top-right treats ----
-    drawTrophyPanel(this, 24, 32, gameState.bestScore);
-    drawTreatsPill(this, GAME_WIDTH - 24, 32, gameState.treats, 'top-right');
+    // ---- Borderless HUD (matches gameplay style) ----
+    // Compact trophy top-left, compact bones top-right — no panels/borders.
+    drawCompactTrophy(this, 22, 30, gameState.bestScore);
+    drawCompactBones(this, GAME_WIDTH - 22, 30, gameState.treats, 'top-right');
 
     // ---- Top-right corner icon buttons (privacy, how-to-play) ----
     new CircleIconButton(this, {

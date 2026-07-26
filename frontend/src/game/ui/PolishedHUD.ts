@@ -203,7 +203,40 @@ export function drawCircleControl(
   return c;
 }
 
-/** A rounded pill with a bone icon + treats count (used in menu + HUD). */
+/** COMPACT borderless "treats/bones" counter — small bone icon + number.
+ * No pill, no border, no background — just the icon and count for the top-right
+ * corner of both the home screen and the gameplay HUD. */
+export function drawCompactBones(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  treats: number,
+  origin: 'top-right' | 'top-left' = 'top-right',
+): { container: Phaser.GameObjects.Container; text: Phaser.GameObjects.Text } {
+  const iconSize = 44;
+  const c = scene.add.container(x, y).setDepth(50);
+  c.setData('testId', 'hud-treats-panel');
+
+  // Bone icon (falls back to a small procedural bone shape if the texture is
+  // missing so the layout stays intact).
+  if (scene.textures.exists('treat')) {
+    const iconX = origin === 'top-right' ? -iconSize / 2 : iconSize / 2;
+    const bone = scene.add.image(iconX, iconSize / 2, 'treat').setDisplaySize(iconSize, iconSize * 0.55);
+    c.add(bone);
+  }
+  const textX = origin === 'top-right' ? -iconSize - 8 : iconSize + 8;
+  const text = scene.add.text(textX, 4, `${treats}`, {
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontSize: '30px',
+    fontStyle: '900',
+    color: '#ffd23c',
+    stroke: '#24304a',
+    strokeThickness: 5,
+  }).setOrigin(origin === 'top-right' ? 1 : 0, 0);
+  c.add(text);
+  return { container: c, text };
+}
+
 export function drawTreatsPill(
   scene: Phaser.Scene,
   x: number,
