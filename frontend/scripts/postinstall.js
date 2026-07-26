@@ -21,6 +21,16 @@
  *   (no expo-router route tree). The shim intercepts `expo start` and
  *   spawns Vite instead. Non-start subcommands (`expo-doctor`, autolinking,
  *   etc.) fall through to the real CLI unchanged.
+ *
+ * PATCH 3 — @capacitor-community/admob@6.2.0 UMP Swift-symbol rename.
+ *   The plugin's ConsentExecutor.swift uses the pre-3.0 GoogleUserMessagingPlatform
+ *   Swift overlay names (`UMPConsentStatus`, `UMPConsentInformation`, …). In
+ *   UMP 3.0+ (which CocoaPods resolves under Google-Mobile-Ads-SDK 11.x)
+ *   the Swift compiler rejects these with:
+ *     "'UMPConsentStatus' has been renamed to 'ConsentStatus'"
+ *   This patch rewrites all 7 renamed symbols to their current names.
+ *   Objective-C class names stay UMP*; only Swift overlay identifiers change.
+ *   The plugin's JS-facing API is untouched.
  */
 'use strict';
 const fs = require('fs');
@@ -29,6 +39,10 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const CLI_TEMPLATE = path.join(ROOT, 'node_modules/@capacitor/cli/dist/util/template.js');
 const EXPO_BIN = path.join(ROOT, 'node_modules/.bin/expo');
+const ADMOB_CONSENT_SWIFT = path.join(
+  ROOT,
+  'node_modules/@capacitor-community/admob/ios/Sources/AdMobPlugin/Consent/ConsentExecutor.swift'
+);
 
 function log(msg) { console.log(`[postinstall] ${msg}`); }
 
@@ -89,4 +103,88 @@ try {
   log('installed expo→vite shim at node_modules/.bin/expo');
 } catch (e) {
   log(`WARN: expo→vite shim failed (${e && e.message}); Metro will be used instead of Vite`);
+}
+
+// ---- PATCH 3 -------------------------------------------------------------
+// @capacitor-community/admob@6.2.0 — GoogleUserMessagingPlatform 3.0 Swift
+// overlay rename. This runs on every install so Codemagic (which does a
+// clean install per build) picks it up automatically.
+try {
+  if (!fs.existsSync(ADMOB_CONSENT_SWIFT)) {
+    // AdMob plugin not installed on this workspace — nothing to patch.
+    log('skipping UMP rename: @capacitor-community/admob not installed');
+  } else {
+    const original = fs.readFileSync(ADMOB_CONSENT_SWIFT, 'utf8');
+
+    // Precise renames — Swift overlay identifiers only. Order matters:
+    // longer-prefix names first so we do not partially rewrite
+    // `UMPConsentInformation` inside `UMPConsentInfo…` etc.
+    const RENAMES = [
+      ['UMPConsentInformation', 'ConsentInformation'],
+      ['UMPConsentStatus',      'ConsentStatus'],
+      ['UMPConsentForm',        'ConsentForm'],
+      ['UMPFormStatus',         'FormStatus'],
+      ['UMPRequestParameters',  'RequestParameters'],
+      ['UMPDebugSettings',      'DebugSettings'],
+      ['UMPDebugGeography',     'DebugGeography'],
+      // PATCH GUARDS — these are documented in the task but not currently
+      // referenced by this file. If they are added upstream in a future
+      // plugin bump, they will be renamed transparently.
+      ['UMPPrivacyOptionsRequirementStatus', 'PrivacyOptionsRequirementStatus'],
+    ];
+
+    // Detect whether we've already patched: presence of the new symbols
+    // *without* the old ones in the same word-boundary context.
+    const oldStillPresent = RENAMES.some(([oldSym]) =>
+      new RegExp('\\b' + oldSym + '\\b').test(original)
+    );
+    const newAlreadyPresent = RENAMES.some(([, newSym]) =>
+      new RegExp('\\b' + newSym + '\\b').test(original)
+    );
+
+    if (!oldStillPresent && newAlreadyPresent) {
+      log('UMP-rename patch already applied — skipped');
+    } else {
+      // FAIL LOUDLY if NONE of the expected old patterns are present —
+      // the upstream file has changed shape and this patch is stale.
+      const anyOldFound = RENAMES.slice(0, 7).some(([oldSym]) =>
+        new RegExp('\\b' + oldSym + '\\b').test(original)
+      );
+      if (!anyOldFound) {
+        console.error(
+          '[postinstall] FATAL: ConsentExecutor.swift no longer contains any of the expected legacy UMP* Swift symbols.\n' +
+            '                  The upstream plugin has changed and this patch is stale.\n' +
+            '                  Inspect ' + ADMOB_CONSENT_SWIFT + ' and update scripts/postinstall.js.'
+        );
+        process.exit(1);
+      }
+
+      let patched = original;
+      const summary = [];
+      for (const [oldSym, newSym] of RENAMES) {
+        const re = new RegExp('\\b' + oldSym + '\\b', 'g');
+        const count = (patched.match(re) || []).length;
+        if (count > 0) {
+          patched = patched.replace(re, newSym);
+          summary.push(`${oldSym} → ${newSym} (${count}×)`);
+        }
+      }
+
+      // Verification: no legacy Swift-overlay symbol survives.
+      for (const [oldSym] of RENAMES) {
+        const re = new RegExp('\\b' + oldSym + '\\b');
+        if (re.test(patched)) {
+          console.error(`[postinstall] FATAL: ${oldSym} still present after rename — patch aborted`);
+          process.exit(1);
+        }
+      }
+
+      fs.writeFileSync(ADMOB_CONSENT_SWIFT, patched);
+      log('applied UMP-rename patch to ConsentExecutor.swift:');
+      for (const line of summary) log('  • ' + line);
+    }
+  }
+} catch (e) {
+  console.error(`[postinstall] FATAL: UMP rename patch failed (${e && e.message})`);
+  process.exit(1);
 }
