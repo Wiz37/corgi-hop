@@ -456,7 +456,11 @@ export class GameScene extends Phaser.Scene {
 
   private executeJumpIfPossible(): void {
     const now = this.time.now;
-    const onGround = this.corgi.body!.velocity.y === 0 && this.corgi.y >= this.groundY - 1;
+    // The grounded check must account for the physics-safe body-bob applied
+    // in applyRunBob(): the sprite can sit up to ~5 px above groundY while
+    // still being "on the ground". Without this tolerance the jump silently
+    // no-ops on any tap that happens to coincide with a bob peak.
+    const onGround = this.corgi.body!.velocity.y === 0 && this.corgi.y >= this.groundY - 6;
     const canCoyote = now < this.coyoteUntil;
     if ((onGround || canCoyote) && now < this.jumpBufferedUntil) {
       // Stop the running bounce BEFORE applying jump velocity so scaleY is
