@@ -89,7 +89,11 @@ function boot() {
     }
   };
   // Browser visibility / focus signals
-  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseIfNeeded(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseIfNeeded();
+    else void sound.ensureUnlocked();
+  });
+  window.addEventListener('focus', () => { void sound.ensureUnlocked(); });
   window.addEventListener('blur', pauseIfNeeded);
   window.addEventListener('pagehide', pauseIfNeeded);
   // Capacitor App plugin (native builds) — pause when isActive becomes false.
@@ -102,6 +106,7 @@ function boot() {
       .then(({ App }: any) => {
         App.addListener('appStateChange', (state: { isActive: boolean }) => {
           if (!state.isActive) pauseIfNeeded();
+          else void sound.ensureUnlocked();
           // isActive=true → deliberately do NOT resume. PauseScene remains
           // visible until the player manually presses Resume.
         });
