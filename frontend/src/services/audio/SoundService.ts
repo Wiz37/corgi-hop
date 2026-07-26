@@ -35,15 +35,27 @@ export class SoundService {
   private musicPlaying = false;
   private musicPausedAt = 0; // context-relative start time of the next bar
   private musicTimerId: number | null = null;
+  private unlockPromise: Promise<boolean> | null = null;
+  private initialized = false;
   private muteListeners = new Set<(muted: boolean) => void>();
 
   private static readonly STORAGE_KEY = 'corgi_hop_muted';
+  private static readonly AUDIO_FIX_KEY = 'corgi_hop_audio_fix_v2';
 
   constructor() {
-    // Restore persisted mute state on construction — the actual AudioContext
-    // is created lazily inside a user gesture (iOS requirement).
+    // Build 2 migration: older TestFlight installs may have persisted a muted
+    // flag while the iOS audio session was not configured. Reset that stale
+    // value once so the repaired build starts audible; later mute choices are
+    // still persisted normally.
     try {
-      this.muted = window.localStorage.getItem(SoundService.STORAGE_KEY) === '1';
+      const fixApplied = window.localStorage.getItem(SoundService.AUDIO_FIX_KEY) === '1';
+      if (!fixApplied) {
+        this.muted = false;
+        window.localStorage.setItem(SoundService.STORAGE_KEY, '0');
+        window.localStorage.setItem(SoundService.AUDIO_FIX_KEY, '1');
+      } else {
+        this.muted = window.localStorage.getItem(SoundService.STORAGE_KEY) === '1';
+      }
     } catch (_) { /* private-mode Safari */ }
   }
 
@@ -71,28 +83,73 @@ export class SoundService {
    * called explicitly by `init()` on the first pointerdown/keydown event we
    * intercept in `main.ts`.
    */
-  ensureUnlocked(): void {
+  async ensureUnlocked(): Promise<boolean> {
     const ctx = this.ensureCtx();
-    if (ctx && ctx.state === 'suspended') {
-      void ctx.resume().catch(() => { /* noop — silent-switch or user denial */ });
-    }
+    if (!ctx) return false;
+    if (ctx.state === 'running') return true;
+    if (this.unlockPromise) return this.unlockPromise;
+
+    this.unlockPromise = (async () => {
+      try {
+        await ctx.resume();
+
+        // iOS WKWebView can report a resumed context but still withhold its
+        // output route until an AudioBufferSourceNode starts inside a user
+        // gesture. A one-frame silent buffer reliably opens that route.
+        const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+
+        if (String(ctx.state) !== 'running') await ctx.resume();
+        return String(ctx.state) === 'running';
+      } catch (error) {
+        console.warn('[Corgi Hop audio] Unable to unlock AudioContext', error);
+        return false;
+      } finally {
+        this.unlockPromise = null;
+      }
+    })();
+
+    return this.unlockPromise;
   }
 
   /**
-   * Wire a one-shot unlock handler onto the DOM. Only needs to run once per
-   * page load; subsequent calls no-op. Call from `main.ts` boot.
+   * Keep unlock listeners active until iOS confirms the AudioContext is
+   * actually running. The extra click/touchend listeners cover WKWebView
+   * versions that do not deliver pointerdown consistently.
    */
   init(): void {
-    if (typeof document === 'undefined') return;
-    const unlock = () => {
-      this.ensureUnlocked();
+    if (typeof document === 'undefined' || this.initialized) return;
+    this.initialized = true;
+
+    let unlock: () => void;
+
+    const removeUnlockListeners = () => {
       document.removeEventListener('pointerdown', unlock, true);
       document.removeEventListener('keydown', unlock, true);
       document.removeEventListener('touchstart', unlock, true);
+      document.removeEventListener('touchend', unlock, true);
+      document.removeEventListener('click', unlock, true);
     };
+
+    unlock = () => {
+      void this.ensureUnlocked().then((running) => {
+        if (running) removeUnlockListeners();
+      });
+    };
+
     document.addEventListener('pointerdown', unlock, true);
     document.addEventListener('keydown', unlock, true);
     document.addEventListener('touchstart', unlock, true);
+    document.addEventListener('touchend', unlock, true);
+    document.addEventListener('click', unlock, true);
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void this.ensureUnlocked();
+    });
+    window.addEventListener('focus', () => { void this.ensureUnlocked(); });
   }
 
   // ================================================================== SFX
@@ -100,7 +157,7 @@ export class SoundService {
   playBounce(): void {
     // Short upward sine chirp 320 → 720 Hz, ~110 ms with a quick attack /
     // exponential decay. Reads as a light, cartoon-friendly "boing".
-    this.envelope((ctx, out, now) => {
+    void this.envelope((ctx, out, now) => {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(320, now);
@@ -118,7 +175,7 @@ export class SoundService {
   playThud(): void {
     // Low-frequency noise burst through a lowpass filter — reads as a soft
     // paw-down thud. Duration ~140 ms.
-    this.envelope((ctx, out, now) => {
+    void this.envelope((ctx, out, now) => {
       const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.14), ctx.sampleRate);
       const data = buf.getChannelData(0);
       for (let i = 0; i < data.length; i++) {
@@ -144,7 +201,7 @@ export class SoundService {
     // Bell-like two-oscillator FM synth — bright but short, ~280 ms. Base
     // 900 Hz sine + tremolo modulator; a stacked 1200 Hz partial gives the
     // "ding" its shimmer. Reads as "point scored" without being intrusive.
-    this.envelope((ctx, out, now) => {
+    void this.envelope((ctx, out, now) => {
       const play = (freq: number, offset: number, decay: number, level: number) => {
         const osc = ctx.createOscillator();
         osc.type = 'sine';
@@ -167,7 +224,7 @@ export class SoundService {
     // Descending 4-note arpeggio (G5 → E5 → C5 → A4), each note ~130 ms with
     // a sawtooth-through-lowpass timbre. Slightly detuned to feel cartoon-y
     // rather than dramatic.
-    this.envelope((ctx, out, now) => {
+    void this.envelope((ctx, out, now) => {
       const notes = [783.99, 659.25, 523.25, 440.00];
       notes.forEach((f, i) => {
         const start = now + i * 0.12;
@@ -190,11 +247,11 @@ export class SoundService {
 
   // Shared helper: creates a per-shot gain node fed by masterGain so muting
   // is instant and the shot survives context resume/pause.
-  private envelope(build: (ctx: AudioContext, out: AudioNode, now: number) => void): void {
-    this.ensureUnlocked();
+  private async envelope(build: (ctx: AudioContext, out: AudioNode, now: number) => void): Promise<void> {
+    const running = await this.ensureUnlocked();
     const ctx = this.ctx;
-    if (!ctx || !this.masterGain || this.muted) return;
-    build(ctx, this.masterGain, ctx.currentTime);
+    if (!running || !ctx || !this.masterGain || this.muted) return;
+    build(ctx, this.masterGain, ctx.currentTime + 0.005);
   }
 
   // ================================================================ MUSIC
@@ -206,11 +263,16 @@ export class SoundService {
    */
   startMusic(): void {
     if (this.musicPlaying) return;
-    this.ensureUnlocked();
-    if (!this.ensureCtx()) return;
     this.musicPlaying = true;
     this.musicPausedAt = 0;
-    this.scheduleBar();
+
+    void this.ensureUnlocked().then((running) => {
+      if (!running || !this.musicPlaying) {
+        if (!running) this.musicPlaying = false;
+        return;
+      }
+      this.scheduleBar();
+    });
   }
 
   pauseMusic(): void {
@@ -337,6 +399,7 @@ export class SoundService {
       g.setValueAtTime(g.value, now);
       g.linearRampToValueAtTime(muted ? 0 : 0.55, now + 0.03);
     }
+    if (!muted) void this.ensureUnlocked();
     this.muteListeners.forEach((cb) => { try { cb(muted); } catch (_) { /* */ } });
   }
 
