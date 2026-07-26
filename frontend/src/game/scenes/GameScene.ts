@@ -30,6 +30,15 @@ export class GameScene extends Phaser.Scene {
   // which never modifies the physics body's y coordinate. Applies to ALL
   // corgis (classic ALSO plays its 8-frame leg animation on top of this).
   private runBounceTween: Phaser.Tweens.Tween | null = null;
+  // Tracks the current run frame rate so we only recreate the animation +
+  // bounce tween when the world speed changes meaningfully (avoids
+  // rebuilding a Phaser tween every frame).
+  private currentRunFps = 0;
+  // Distance in world-pixels a single run frame should "cover". Chosen so
+  // the corgi's stride cadence feels natural across the full speed range
+  // (340 → 760 px/s ⇒ 12–27 fps). Prevents the "ice-skating" effect where
+  // frames advance at a fixed rate while the world scrolls faster.
+  private readonly STRIDE_PIX = 28;
   private score = 0;
   private treatsThisRun = 0;
   private doubleTreatsClaimed = false;
@@ -220,18 +229,56 @@ export class GameScene extends Phaser.Scene {
    * bounce compresses toward the feet, exactly like a real running gait.
    * Works for CLASSIC (on top of the 8-frame animation) and every premium
    * corgi (where it is the only source of motion).
+   *
+   * The bounce duration is derived from the current `gameSpeed` so the
+   * bounce cadence stays synchronized with the leg-cycle frame rate (see
+   * `syncRunTiming`). One full bounce = one stride.
    */
   private startRunBounce(): void {
     if (this.runBounceTween && this.runBounceTween.isPlaying()) return;
     if (this.baseScale <= 0) return;
+    // Bounce duration follows the run FPS: half-cycle = 2 frames worth of time.
+    const fps = Math.max(10, this.currentRunFps || (this.gameSpeed / this.STRIDE_PIX));
+    const halfCycleMs = Math.max(70, (2000 / fps));
     this.runBounceTween = this.tweens.add({
       targets: this.corgi,
       scaleY: this.baseScale * 0.94,
-      duration: 190,
+      duration: halfCycleMs,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
+  }
+
+  /**
+   * Sync the run animation frame rate + body-bounce cadence to `gameSpeed`
+   * so the corgi's legs cycle at a speed that matches how fast the world
+   * is scrolling past it. Solves the classic 2D "ice-skating" problem where
+   * the character's stride is out of sync with the ground movement.
+   *
+   * Called every update tick — cheap, only rebuilds the tween when the fps
+   * changes by more than 0.5 to avoid churn.
+   */
+  private syncRunTiming(): void {
+    const fps = Math.max(10, Math.min(30, this.gameSpeed / this.STRIDE_PIX));
+    if (Math.abs(fps - this.currentRunFps) < 0.5) return;
+    this.currentRunFps = fps;
+    // Classic corgi has the 8-frame sprite-sheet: update its playback rate.
+    const anim = this.corgi.anims.currentAnim;
+    if (anim && anim.key === 'run') {
+      // msPerFrame is authoritative in Phaser 3 — set both for safety.
+      const msPerFrame = 1000 / fps;
+      this.corgi.anims.msPerFrame = msPerFrame;
+    }
+    // Body-bounce tween: recreate at the new cadence so it stays locked to
+    // the leg cycle. Only do this while the tween is already running (i.e.
+    // corgi is on the ground). Otherwise the update to startRunBounce()'s
+    // duration formula will pick up the new fps on the next start.
+    if (this.runBounceTween && this.runBounceTween.isPlaying()) {
+      this.runBounceTween.stop();
+      this.runBounceTween = null;
+      this.startRunBounce();
+    }
   }
 
   /** Stop the running bounce and reset scaleY to the base value. */
@@ -242,6 +289,29 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.corgi) {
       this.corgi.setScale(this.baseScale, this.baseScale);
+    }
+  }
+
+  /**
+   * Apply asymmetric gravity to the corgi body so the jump feels responsive:
+   *   - Rising:   lower total gravity  → the ascent "hangs" a bit near the peak.
+   *   - Falling:  higher total gravity → the descent is snappier.
+   * World gravity is 2400 (set in main.ts). We add a local body.gravity.y
+   * offset that only affects this sprite.
+   */
+  private applyAirGravity(): void {
+    const body = this.corgi.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) return;
+    const vy = body.velocity.y;
+    if (this.corgi.y >= this.groundY - 0.5 && vy === 0) {
+      // Grounded — no offset.
+      body.setGravityY(0);
+    } else if (vy < 0) {
+      // Rising: total gravity 2400 - 400 = 2000 → slower rise, satisfying hangtime.
+      body.setGravityY(-400);
+    } else {
+      // Falling: total gravity 2400 + 1000 = 3400 → snappier fall.
+      body.setGravityY(1000);
     }
   }
 
@@ -296,6 +366,13 @@ export class GameScene extends Phaser.Scene {
 
     // Ease game speed toward target for smooth acceleration
     this.gameSpeed += (this.targetSpeed - this.gameSpeed) * Math.min(1, dt * 2);
+
+    // Keep the run animation cadence + body-bounce locked to the current
+    // world scroll speed — no more "ice-skating" corgi.
+    this.syncRunTiming();
+    // Apply asymmetric gravity so the jump slows near the peak and drops
+    // faster on the way down.
+    this.applyAirGravity();
 
     // Parallax: distance layers move slower
     const spd = this.gameSpeed / 420; // normalised
