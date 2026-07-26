@@ -77,21 +77,94 @@ const MOCK_CATALOG: Product[] = [
   },
 ];
 
+// Lazy-loaded RevenueCat plugin (kept `any` so the browser bundle builds
+// without the native iOS/Android bridge existing).
+let RC: any = null;
+let LOG_LEVEL: any = null;
+
+async function loadRC(): Promise<any> {
+  if (RC) return RC;
+  try {
+    const mod = await import('@revenuecat/purchases-capacitor');
+    RC = mod.Purchases;
+    LOG_LEVEL = (mod as any).LOG_LEVEL;
+    return RC;
+  } catch {
+    return null;
+  }
+}
+
+function rcApiKey(): string {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const iosKey = String(import.meta.env.VITE_REVENUECAT_IOS_PUBLIC_KEY ?? '');
+  const androidKey = String(import.meta.env.VITE_REVENUECAT_ANDROID_PUBLIC_KEY ?? '');
+  const testKey = String(import.meta.env.VITE_REVENUECAT_TEST_PUBLIC_KEY ?? '');
+  const key = isIOS ? iosKey : androidKey;
+  return key || testKey; // fall back to test-store key if platform key missing
+}
+
 export class PurchaseService {
   private native = false;
   private catalog: Product[] = MOCK_CATALOG.slice();
   private ready = false;
   private starterExtraShields = 0;
+  // Anti-double-charge for the same product within a single tap window.
+  private purchaseInFlight: Set<string> = new Set();
 
   init(isNative: boolean): void {
     this.native = isNative;
-    // Load cached entitlements (spec: cache verified entitlements for offline play).
-    // gameState.load() has already populated `gameState.entitlements`.
     this.starterExtraShields = storage.getNumber('starter_shields_remaining', 0);
     this.ready = !isNative; // browser preview is instantly ready
     if (isNative) {
-      // Native TODO: configure RevenueCat, log in, fetch offerings, refresh
-      // entitlements, then set `this.ready = true`.
+      // Fire-and-forget async native init. Once entitlements are fetched
+      // and merged into gameState.entitlements, `this.ready` flips to true.
+      void this.initNative();
+    }
+  }
+
+  private async initNative(): Promise<void> {
+    const rc = await loadRC();
+    if (!rc) return;
+    const key = rcApiKey();
+    if (!key) {
+      // No key configured — keep the mock catalog available; native calls
+      // will simply be skipped until a real key is provided.
+      // eslint-disable-next-line no-console
+      console.warn('[RevenueCat] No public SDK key configured — skipping native init');
+      return;
+    }
+    try {
+      if (LOG_LEVEL) await rc.setLogLevel({ level: LOG_LEVEL.WARN });
+      await rc.configure({ apiKey: key });
+      await this.refreshEntitlements();
+      this.ready = true;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[RevenueCat] configure failed:', e);
+    }
+  }
+
+  /** Fetch CustomerInfo from RevenueCat + write to gameState.entitlements. */
+  private async refreshEntitlements(): Promise<void> {
+    const rc = await loadRC();
+    if (!rc) return;
+    try {
+      const res = await rc.getCustomerInfo();
+      const info = (res as any).customerInfo ?? res;
+      const active = info?.entitlements?.active ?? {};
+      // Map RevenueCat entitlement IDs → our internal booleans. Higher-tier
+      // entitlements supersede lower ones automatically because we OR them
+      // in isCorgiOwned (see GameState).
+      gameState.entitlements = {
+        removeAds:      Boolean(active.removeAds || active.allCorgis || active.premiumCorgis),
+        starterPack:    Boolean(active.starterPack || active.allCorgis),
+        premiumCorgis:  Boolean(active.premiumCorgis || active.allCorgis),
+        allCorgis:      Boolean(active.allCorgis),
+      };
+      gameState.saveEntitlements();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[RevenueCat] getCustomerInfo failed:', e);
     }
   }
 
@@ -127,31 +200,101 @@ export class PurchaseService {
   /** Simulated / native purchase flow. */
   async purchase(id: ProductId): Promise<PurchaseResult> {
     if (!this.ready) return { kind: 'unavailable' };
-
-    if (!this.native) {
-      // Simulated flow: ask the user via a DOM confirm-style dialog.
-      const confirmed = await this.showBrowserPurchaseDialog(id);
-      if (!confirmed) return { kind: 'cancelled' };
-      // Starter Pack: block a second successful claim (spec).
-      if (id === 'com.corgihop.starter_pack' && gameState.entitlements.starterPack) {
-        return { kind: 'failed', message: 'Starter Pack already purchased.' };
-      }
-      this.applyEntitlement(id);
-      return { kind: 'success', productId: id };
+    // Anti double-charge: if the same product is already being purchased,
+    // don't fire the flow again.
+    if (this.purchaseInFlight.has(id)) return { kind: 'unavailable' };
+    // For non-consumables, block if already owned.
+    if (id !== 'com.corgihop.bone_bundle_small'
+     && id !== 'com.corgihop.bone_bundle_medium'
+     && id !== 'com.corgihop.bone_bundle_large'
+     && this.hasEntitlement(id)) {
+      return { kind: 'failed', message: 'Already owned.' };
     }
-    // Native TODO: real RevenueCat purchase; only apply entitlement after
-    // the SDK reports success + the entitlement is verified.
-    return { kind: 'failed', message: 'Native purchases not enabled in preview.' };
+    this.purchaseInFlight.add(id);
+    try {
+      if (!this.native) {
+        const confirmed = await this.showBrowserPurchaseDialog(id);
+        if (!confirmed) return { kind: 'cancelled' };
+        if (id === 'com.corgihop.starter_pack' && gameState.entitlements.starterPack) {
+          return { kind: 'failed', message: 'Starter Pack already purchased.' };
+        }
+        this.applyEntitlement(id);
+        return { kind: 'success', productId: id };
+      }
+      // ---- Native RevenueCat flow ----
+      const rc = await loadRC();
+      if (!rc) return { kind: 'unavailable' };
+      try {
+        // Fetch offerings to resolve the RC package for this product id.
+        const offRes = await rc.getOfferings();
+        const offerings = (offRes as any).offerings ?? offRes;
+        const current = offerings?.current ?? Object.values(offerings?.all ?? {})[0];
+        const packages: any[] = current?.availablePackages ?? [];
+        const pkg = packages.find(p => p.product?.identifier === id
+                                    || p.storeProduct?.identifier === id);
+        if (!pkg) return { kind: 'unavailable' };
+        const purchaseRes = await rc.purchasePackage({ aPackage: pkg });
+        // A successful purchase returns the updated CustomerInfo. Reconcile
+        // entitlements from the SERVER response — never trust local state.
+        const info = (purchaseRes as any).customerInfo;
+        const active = info?.entitlements?.active ?? {};
+        gameState.entitlements = {
+          removeAds:     Boolean(active.removeAds || active.allCorgis || active.premiumCorgis),
+          starterPack:   Boolean(active.starterPack || active.allCorgis),
+          premiumCorgis: Boolean(active.premiumCorgis || active.allCorgis),
+          allCorgis:     Boolean(active.allCorgis),
+        };
+        gameState.saveEntitlements();
+        // Consumable bone bundles: no entitlement, no local grant here.
+        // Bone amounts will be granted after user separately approves the
+        // exact quantities (spec: "Do not assign Bone quantities or prices
+        // until I approve the final store packages.").
+        return { kind: 'success', productId: id };
+      } catch (e: any) {
+        const userCancelled = String(e?.code ?? e?.message ?? '').toLowerCase().includes('cancel')
+                            || e?.userCancelled === true;
+        if (userCancelled) return { kind: 'cancelled' };
+        return { kind: 'failed', message: String(e?.message ?? e) };
+      }
+    } finally {
+      this.purchaseInFlight.delete(id);
+    }
   }
 
-  /** Restore Purchases — required on both platforms. */
+  /**
+   * Restore Purchases — RevenueCat returns the FULL CustomerInfo which we
+   * use to re-hydrate entitlements. Consumables (bone bundles) are NEVER
+   * restored — they were spent by the user in prior sessions.
+   */
   async restore(): Promise<PurchaseResult> {
     if (!this.native) {
-      // Simulated: just re-read cached entitlements.
+      // Simulated: just re-read cached entitlements from local storage.
       return { kind: 'success', productId: 'com.corgihop.remove_ads' };
     }
-    // Native TODO: call `Purchases.restorePurchases()` and reconcile entitlements.
-    return { kind: 'unavailable' };
+    const rc = await loadRC();
+    if (!rc) return { kind: 'unavailable' };
+    try {
+      const res = await rc.restorePurchases();
+      const info = (res as any).customerInfo ?? res;
+      const active = info?.entitlements?.active ?? {};
+      const before = { ...gameState.entitlements };
+      gameState.entitlements = {
+        removeAds:     Boolean(active.removeAds || active.allCorgis || active.premiumCorgis),
+        starterPack:   Boolean(active.starterPack || active.allCorgis),
+        premiumCorgis: Boolean(active.premiumCorgis || active.allCorgis),
+        allCorgis:     Boolean(active.allCorgis),
+      };
+      gameState.saveEntitlements();
+      const anyRestored = (!before.removeAds && gameState.entitlements.removeAds)
+                       || (!before.starterPack && gameState.entitlements.starterPack)
+                       || (!before.premiumCorgis && gameState.entitlements.premiumCorgis)
+                       || (!before.allCorgis && gameState.entitlements.allCorgis);
+      return anyRestored
+        ? { kind: 'success', productId: 'com.corgihop.all_corgis' }
+        : { kind: 'unavailable' };
+    } catch (e: any) {
+      return { kind: 'failed', message: String(e?.message ?? e) };
+    }
   }
 
   /** Apply a *verified* entitlement locally and grant its benefits. */
