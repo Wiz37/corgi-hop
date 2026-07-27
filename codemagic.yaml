@@ -146,7 +146,7 @@ workflows:
           set -euo pipefail
           cd "$CM_BUILD_DIR/frontend"
 
-          xcode-project use-profiles
+          xcode-project use-profiles 
         
 
       - name: Archive and export signed IPA
