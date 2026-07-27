@@ -364,7 +364,7 @@ export class GameScene extends Phaser.Scene {
       body.setGravityY(0);
     } else if (vy < 0) {
       // Rising: total gravity 2400 - 400 = 2000 → slower rise, satisfying hangtime.
-      body.setGravityY(-400);
+      body.setGravityY(-300);
     } else {
       // Falling: total gravity 2400 + 1000 = 3400 → snappier fall.
       body.setGravityY(1000);
