@@ -41,7 +41,7 @@ function boot() {
     physics: {
       default: 'arcade',
       arcade: {
-        gravity: { x: 0, y: 2400 },
+        gravity: { x: 0, y: 2100 },
         debug: false,
       },
     },
