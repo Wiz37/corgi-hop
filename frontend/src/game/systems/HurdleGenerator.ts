@@ -25,10 +25,10 @@
 // PHYSICS CONSTANTS — mirror the values in GameScene / main.ts
 // ---------------------------------------------------------------------------
 export const PHYSICS = {
-  worldGravity: 2400,
-  gravityRise:  -400,
-  gravityFall:  1000,
-  jumpVelocity: -980,        // peak ≈ 240 px (~1.5 corgi body-heights)
+  worldGravity: 2200,
+  gravityRise:  -300,
+  gravityFall:   700,
+  jumpVelocity: -950,        // peak ≈ 240 px (~1.5 corgi body-heights)
   baseSpeed:     340,
   maxSpeed:      680,        // long-term cap (was 760)
   dogColliderW:  120,
