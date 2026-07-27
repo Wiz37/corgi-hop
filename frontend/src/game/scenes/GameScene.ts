@@ -984,7 +984,7 @@ export class GameScene extends Phaser.Scene {
       { key: 'bush',       y: this.groundY - 2,  scale: 0.22, depth: 6.8, alpha: 1,    scroll: 90 },
       { key: 'bush',       y: this.groundY - 4,  scale: 0.20, depth: 6.8, alpha: 1,    scroll: 90 },
       // Rocks between the corgi and the horizon
-      { key: 'rock',       y: this.groundY - 2,  scale: 0.20, depth: 6.8, alpha: 1,    scroll: 90 },
+      
     ];
     const spacing = 520;
     for (let i = 0; i < 10; i++) {
