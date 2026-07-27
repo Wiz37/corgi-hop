@@ -105,21 +105,24 @@ export interface PatternSpec {
 }
 
 export const TIERS: DifficultyTier[] = [
-  // Confidence-building opening: SINGLE ONLY, short-to-medium hurdles,
-  // generous spacing, generous reaction window.
+  // Very forgiving opening: the first 10 hurdles are single, short, narrow,
+  // and provide a long reaction window so new players can learn the timing.
   {
-  scoreMin: 0, scoreMax: 10,
-  minReactionMs: 1450,
-  heights: { min: 70, max: 84 },
-  widths:  { min: 56, max: 72 },
-  patterns: [{ kind: 'single', weight: 100 }],
-},
-{
-  scoreMin: 11, scoreMax: 30,
-  minReactionMs: 1300,
-  heights: { min: 70, max: 96 },
-  widths:  { min: 56, max: 80 },
-  patterns: [{ kind: 'single', weight: 100 }],
+    scoreMin: 0, scoreMax: 10,
+    minReactionMs: 1450,
+    heights: { min: 70, max: 84 },
+    widths:  { min: 56, max: 72 },
+    patterns: [{ kind: 'single', weight: 100 }],
+  },
+  // Smooth transition after the tutorial opening. Still single-only through
+  // score 30, but height and width expand gradually.
+  {
+    scoreMin: 11, scoreMax: 30,
+    minReactionMs: 1300,
+    heights: { min: 70, max: 96 },
+    widths:  { min: 56, max: 80 },
+    patterns: [{ kind: 'single', weight: 100 }],
+  },
   // First difficulty step: mostly single, first rare doubles at score 40+
   // (generator enforces the 40-floor in generateCandidate).
   {
