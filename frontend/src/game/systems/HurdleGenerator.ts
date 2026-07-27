@@ -108,12 +108,18 @@ export const TIERS: DifficultyTier[] = [
   // Confidence-building opening: SINGLE ONLY, short-to-medium hurdles,
   // generous spacing, generous reaction window.
   {
-    scoreMin: 0, scoreMax: 30,
-    minReactionMs: 1250,
-    heights: { min: 70,  max: 100 },
-    widths:  { min: 56,  max: 82  },
-    patterns: [{ kind: 'single', weight: 100 }],
-  },
+  scoreMin: 0, scoreMax: 10,
+  minReactionMs: 1450,
+  heights: { min: 70, max: 84 },
+  widths:  { min: 56, max: 72 },
+  patterns: [{ kind: 'single', weight: 100 }],
+},
+{
+  scoreMin: 11, scoreMax: 30,
+  minReactionMs: 1300,
+  heights: { min: 70, max: 96 },
+  widths:  { min: 56, max: 80 },
+  patterns: [{ kind: 'single', weight: 100 }],
   // First difficulty step: mostly single, first rare doubles at score 40+
   // (generator enforces the 40-floor in generateCandidate).
   {
