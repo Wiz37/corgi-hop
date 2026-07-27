@@ -41,7 +41,7 @@ export class GameScene extends Phaser.Scene {
   //          ≈ 240 px
   // Mirror this in HurdleGenerator.PHYSICS so the 10 000-sequence
   // validator uses the same physics constant.
-  private jumpVelocity = -980;
+  private jumpVelocity = -950;
   // Base uniform scale set by sizeCorgiUniform(). The body-bounce tween
   // oscillates scaleY around this value, and pose swaps use it as the reset
   // target so scale never drifts during a run.
