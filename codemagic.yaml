@@ -146,8 +146,8 @@ workflows:
           set -euo pipefail
           cd "$CM_BUILD_DIR/frontend"
 
-          xcode-project use-profiles \
-            --custom-export-options='{"testFlightInternalTestingOnly": true}'
+          xcode-project use-profiles
+        
 
       - name: Archive and export signed IPA
         script: |
