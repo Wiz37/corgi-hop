@@ -75,9 +75,14 @@ export class PolishedButton extends Phaser.GameObjects.Container {
 
     this.setSize(opts.w, opts.h);
     this.setInteractive(
-      new Phaser.Geom.Rectangle(-opts.w / 2, -opts.h / 2, opts.w, opts.h),
-      Phaser.Geom.Rectangle.Contains,
-    );
+  new Phaser.Geom.Rectangle(
+    -opts.w / 2 - 24,
+    -opts.h / 2 - 24,
+    opts.w + 48,
+    opts.h + 48,
+  ),
+  Phaser.Geom.Rectangle.Contains,
+);
     if (opts.testId) this.setData('testId', opts.testId);
 
     this.on('pointerdown', this.onDown, this);
