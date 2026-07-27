@@ -183,7 +183,10 @@ export class CircleIconButton extends Phaser.GameObjects.Container {
     this.add(t);
 
     this.setSize(opts.size, opts.size);
-    this.setInteractive(new Phaser.Geom.Circle(0, 0, opts.size / 2), Phaser.Geom.Circle.Contains);
+    this.setInteractive(
+  new Phaser.Geom.Circle(0, 0, opts.size / 2 + 16),
+  Phaser.Geom.Circle.Contains,
+);
     if (opts.testId) this.setData('testId', opts.testId);
 
     this.on('pointerdown', () => scene.tweens.add({ targets: this, scale: 0.9, duration: 60, yoyo: true }));
