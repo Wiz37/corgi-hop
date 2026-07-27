@@ -367,7 +367,7 @@ export class GameScene extends Phaser.Scene {
       body.setGravityY(-300);
     } else {
       // Falling: total gravity 2400 + 1000 = 3400 → snappier fall.
-      body.setGravityY(1000);
+      body.setGravityY(700);
     }
   }
 
