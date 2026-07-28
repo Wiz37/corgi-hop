@@ -3,7 +3,9 @@ import { BootScene } from './game/scenes/BootScene';
 import { PreloadScene } from './game/scenes/PreloadScene';
 import { MenuScene } from './game/scenes/MenuScene';
 import { GameScene } from './game/scenes/GameScene';
+import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
+import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -20,9 +22,14 @@ export const GAME_WIDTH = 720;
 export const GAME_HEIGHT = 1280;
 
 function boot() {
+  // Install triple timing first so the fun-gameplay wrapper can skin and tag
+  // both generated and injected obstacle groups consistently.
+  installTripleTiming(GameScene);
   // Add skill rewards, streaks, daily missions, and collectible paths without
   // changing the existing jump physics or obstacle validation.
   installFunGameplay(GameScene);
+  // Add a clear X-eyes crash reaction to every selectable corgi skin.
+  installBonkEyes(GameScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
   // Safari and iOS WKWebView both suspend the audio context until then.
   sound.init();
