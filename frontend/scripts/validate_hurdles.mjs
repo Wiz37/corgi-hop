@@ -1,23 +1,6 @@
 #!/usr/bin/env node
 /**
- * 25,000-sequence hurdle validator.
- *
- * Imports the LIVE game generator from
- *   /app/frontend/src/game/systems/HurdleGenerator.ts
- * via tsx so the same code that runs in the browser is under test.
- *
- * For each of 10,000 iterations we:
- *   1. Pick a random score (0..80) and a matching gameSpeed (baseSpeed +
- *      score*speedRampK, capped at maxSpeed).
- *   2. Seed a fresh RNG.
- *   3. Simulate a full 30-obstacle sequence at that score/speed, calling
- *      generateValidated(). Every returned candidate is re-validated to
- *      confirm the generator's OWN validator agrees.
- *   4. Also check pairwise: previous group's runway must physically leave
- *      enough space before the next group.
- *
- * Any candidate that fails any check aborts the run with a full trace.
- * Otherwise we print the aggregate statistics required by the spec.
+ * 25,000-sequence hurdle validator using the live game generator.
  */
 
 import {
@@ -28,6 +11,7 @@ import {
 
 const TOTAL_SEQUENCES = 25000;
 const OBSTACLES_PER_SEQUENCE = 30;
+const DOUBLE_KINDS = ['double-mid', 'double-close', 'wide-double'];
 
 const stats = {
   sequences: 0,
@@ -52,77 +36,69 @@ const stats = {
     belowReactionFloor: 0,
     closeDoubleBefore75: 0,
     doubleRecoveryViolation: 0,
+    tutorialSpeedChanged: 0,
+    noRampAfter7: 0,
+    nonMonotonicSpeed: 0,
   },
   failures: [],
 };
 
 const arc = jumpArc();
 console.log(`\nCorgi-Hop hurdle validator — 25,000-sequence physics audit\n`);
-console.log(`Physics constants:`);
-console.log(`  jumpVelocity=${PHYSICS.jumpVelocity}  worldGravity=${PHYSICS.worldGravity}`);
-console.log(`  gravityRise=${PHYSICS.gravityRise}  gravityFall=${PHYSICS.gravityFall}`);
-console.log(`  baseSpeed=${PHYSICS.baseSpeed}  maxSpeed=${PHYSICS.maxSpeed}`);
-console.log(`Derived jump arc:`);
-console.log(`  peak=${arc.peakPx.toFixed(1)}px  ascent=${arc.ascentMs.toFixed(0)}ms  descent=${arc.descentMs.toFixed(0)}ms  total=${arc.totalAirMs.toFixed(0)}ms`);
-console.log(`  range@baseSpeed=${arc.horizontalRangeAtSpeed(PHYSICS.baseSpeed).toFixed(0)}px  range@maxSpeed=${arc.horizontalRangeAtSpeed(PHYSICS.maxSpeed).toFixed(0)}px`);
-console.log(`Tiers:`);
-for (const t of TIERS) {
-  console.log(`  score ${t.scoreMin}-${t.scoreMax}: reaction≥${t.minReactionMs}ms  H=${t.heights.min}..${t.heights.max}  W=${t.widths.min}..${t.widths.max}  ${t.patterns.map(p=>p.kind).join('/')}`);
+console.log(`Physics: jump=${PHYSICS.jumpVelocity}, gravity=${PHYSICS.worldGravity}, speed=${PHYSICS.baseSpeed}..${PHYSICS.maxSpeed}`);
+console.log(`Jump arc: peak=${arc.peakPx.toFixed(1)}px, air=${arc.totalAirMs.toFixed(0)}ms`);
+console.log('Tiers:');
+for (const tier of TIERS) {
+  console.log(`  ${tier.scoreMin}-${tier.scoreMax}: reaction≥${tier.minReactionMs}ms, ${tier.patterns.map((pattern) => pattern.kind).join('/')}`);
 }
-console.log('');
 
-// Sweep across all difficulty tiers evenly so we exercise the full behaviour.
 const scoreSamples = [];
-for (const t of TIERS) {
-  const span = Math.max(1, t.scoreMax === 9999 ? 40 : (t.scoreMax - t.scoreMin + 1));
-  for (let s = t.scoreMin; s <= Math.min(t.scoreMax, t.scoreMin + span - 1); s++) scoreSamples.push(s);
+for (const tier of TIERS) {
+  const span = Math.max(1, tier.scoreMax === 9999 ? 40 : tier.scoreMax - tier.scoreMin + 1);
+  for (let score = tier.scoreMin; score <= Math.min(tier.scoreMax, tier.scoreMin + span - 1); score++) {
+    scoreSamples.push(score);
+  }
 }
-// Anchor stress points requested by the current speed curve.
-for (const s of [0, 15, 30, 60, 100, 150, 220, 300, 400]) {
-  for (let k = 0; k < 40; k++) scoreSamples.push(s);
+for (const score of [0, 7, 8, 15, 30, 60, 100, 150, 220, 300, 400]) {
+  for (let repeat = 0; repeat < 40; repeat++) scoreSamples.push(score);
 }
 
-for (let seqIdx = 0; seqIdx < TOTAL_SEQUENCES; seqIdx++) {
-  const seed = 1000 + seqIdx;
+for (let sequenceIndex = 0; sequenceIndex < TOTAL_SEQUENCES; sequenceIndex++) {
+  const seed = 1000 + sequenceIndex;
   const rng = makeRng(seed);
-  const startScore = scoreSamples[seqIdx % scoreSamples.length];
-  // Simulate 30 consecutive obstacles for this "run" — score climbs as we go.
+  let score = scoreSamples[sequenceIndex % scoreSamples.length];
   const history = [];
-  let score = startScore;
   let lastCandidate = null;
-  // World-x cursor — every candidate is generated at its own "local" baseX
-  // (720+120 = 840). To compute the true spacing between consecutive groups
-  // we translate every fence by `worldOffset` so groups are laid out along
-  // the actual x-axis exactly as the game would spawn them (each new group
-  // spawns at (last group's last edge + last.nextRunwayPx)).
   let worldOffset = 0;
-  const groupBaseX = 840; // GAME_WIDTH + spawn buffer, matches HurdleGenerator
-  for (let i = 0; i < OBSTACLES_PER_SEQUENCE; i++) {
-    const gs = speedForScore(score);
-    const { candidate, rejected } = generateValidated(score, gs, rng, history);
+  const groupBaseX = 840;
+
+  for (let obstacleIndex = 0; obstacleIndex < OBSTACLES_PER_SEQUENCE; obstacleIndex++) {
+    const gameSpeed = speedForScore(score);
+    const { candidate, rejected } = generateValidated(score, gameSpeed, rng, history);
     stats.candidates += 1;
     stats.rejected += rejected;
     if (candidate.reactionMs === 9999) stats.fallbacks += 1;
-    // Translate the candidate's fences into world-space for pairwise checks.
-    const worldFences = candidate.fences.map(f => ({
-      x: f.x - groupBaseX + worldOffset,
-      height: f.height,
-      width: f.width,
+
+    const worldFences = candidate.fences.map((fence) => ({
+      x: fence.x - groupBaseX + worldOffset,
+      height: fence.height,
+      width: fence.width,
     }));
-    // Independent re-check — the generator's own validator must agree.
-    const v = validate(candidate);
-    if (!v.ok) {
-      stats.failures.push({ seed, i, candidate, reasons: v.reasons });
+    const validation = validate(candidate);
+    if (!validation.ok) {
+      stats.failures.push({ seed, obstacleIndex, candidate, reasons: validation.reasons });
       break;
     }
-    // Pairwise runway check with the previous candidate (using world coords).
+
     if (lastCandidate) {
-      const prev = lastCandidate.worldFences[lastCandidate.worldFences.length - 1];
+      const previous = lastCandidate.worldFences[lastCandidate.worldFences.length - 1];
       const next = worldFences[0];
-      const runway = (next.x - next.width / 2) - (prev.x + prev.width / 2);
+      const runway = (next.x - next.width / 2) - (previous.x + previous.width / 2);
       if (runway < lastCandidate.nextRunwayPx - 2) {
         stats.failures.push({
-          seed, i, candidate,
+          seed,
+          obstacleIndex,
+          candidate,
           reasons: [`inter-group runway ${runway.toFixed(0)}px < declared ${lastCandidate.nextRunwayPx.toFixed(0)}px`],
         });
         break;
@@ -130,108 +106,80 @@ for (let seqIdx = 0; seqIdx < TOTAL_SEQUENCES; seqIdx++) {
       stats.minSpacing = Math.min(stats.minSpacing, runway);
       stats.maxSpacing = Math.max(stats.maxSpacing, runway);
     }
-    // Track fence extremes.
-    for (const f of candidate.fences) {
-      stats.minHeight = Math.min(stats.minHeight, f.height);
-      stats.maxHeight = Math.max(stats.maxHeight, f.height);
-      stats.minWidth  = Math.min(stats.minWidth,  f.width);
-      stats.maxWidth  = Math.max(stats.maxWidth,  f.width);
+
+    for (const fence of candidate.fences) {
+      stats.minHeight = Math.min(stats.minHeight, fence.height);
+      stats.maxHeight = Math.max(stats.maxHeight, fence.height);
+      stats.minWidth = Math.min(stats.minWidth, fence.width);
+      stats.maxWidth = Math.max(stats.maxWidth, fence.width);
     }
     stats.minReactionMs = Math.min(stats.minReactionMs, candidate.reactionMs);
     stats.maxReactionMs = Math.max(stats.maxReactionMs, candidate.reactionMs);
     const tierName = `${candidate.tier.scoreMin}-${candidate.tier.scoreMax}`;
     stats.perTier[tierName] = (stats.perTier[tierName] || 0) + 1;
     stats.perKind[candidate.kind] = (stats.perKind[candidate.kind] || 0) + 1;
-    // Spec-mandated invariants — track violations separately from `failures`.
+
+    const candidateIsDouble = DOUBLE_KINDS.includes(candidate.kind);
     if (candidate.kind === 'triple' && score < 101) stats.invariantFailures.tripleBefore101 += 1;
-    if ((candidate.kind === 'double-mid' || candidate.kind === 'double-close' || candidate.kind === 'wide-double') && score < 15) {
-      stats.invariantFailures.doubleBefore15 += 1;
-    }
+    if (candidateIsDouble && score < 15) stats.invariantFailures.doubleBefore15 += 1;
     if (candidate.reactionMs < candidate.tier.minReactionMs) stats.invariantFailures.belowReactionFloor += 1;
     if (candidate.kind === 'double-close' && score < 75) stats.invariantFailures.closeDoubleBefore75 += 1;
-    const isDouble = ['double-mid', 'double-close', 'wide-double'].includes(candidate.kind);
     if (score >= 15 && score <= 30) {
       stats.earlyPatterns += 1;
-      if (isDouble) stats.earlyDoubles += 1;
+      if (candidateIsDouble) stats.earlyDoubles += 1;
     }
-    const recentDouble = history.slice(-2)
-      .some(kind => ['double-mid', 'double-close', 'wide-double'].includes(kind));
-    if (recentDouble && candidate.kind !== 'single') {
-      stats.invariantFailures.doubleRecoveryViolation += 1;
-    }
+    const recentDouble = history.slice(-2).some((kind) => DOUBLE_KINDS.includes(kind));
+    if (recentDouble && candidate.kind !== 'single') stats.invariantFailures.doubleRecoveryViolation += 1;
 
     history.push(candidate.kind);
     if (history.length > 5) history.shift();
-    // Save with world-space fence coords so the next iteration sees them.
     lastCandidate = { ...candidate, worldFences };
-    // Advance the world cursor: skip past this group's last fence edge, then
-    // the declared runway to the NEXT group's first fence edge.
-    const lastEdgeX = worldFences[worldFences.length - 1].x
-                    + worldFences[worldFences.length - 1].width / 2;
-    // Next group's first fence LEFT edge = lastEdgeX + nextRunwayPx, and its
-    // local x is 840 - width/2. So worldOffset for next iteration:
-    //   worldOffset - groupBaseX = lastEdgeX + nextRunwayPx - width/2_of_next
-    // We don't know the next group's width yet, so compute worldOffset as
-    // the desired world_x of the next group's LEFT edge, plus the group's
-    // local baseX so `f.x - groupBaseX + worldOffset` lands at the correct
-    // world position.
-    worldOffset = lastEdgeX + candidate.nextRunwayPx + groupBaseX;
-
-    // Simulate the corgi passing this obstacle → +1 score, speed re-derived
-    // next iteration.
+    const finalFence = worldFences[worldFences.length - 1];
+    const finalEdge = finalFence.x + finalFence.width / 2;
+    worldOffset = finalEdge + candidate.nextRunwayPx + groupBaseX;
     score = Math.min(120, score + 1);
   }
+
   stats.sequences += 1;
   if (stats.failures.length > 0) break;
 }
 
-console.log(`--- Results ---`);
-console.log(`Total sequences generated:        ${stats.sequences}`);
-console.log(`Total obstacle candidates:        ${stats.candidates}`);
-console.log(`Total candidates rejected by gen: ${stats.rejected} (retried within generateValidated)`);
-console.log(`Fallback (safe) spawns emitted:   ${stats.fallbacks}`);
-console.log(`Impossible / failing sequences:   ${stats.failures.length}`);
-console.log(``);
-console.log(`Fence height  min/max: ${stats.minHeight}px / ${stats.maxHeight}px`);
-console.log(`Fence width   min/max: ${stats.minWidth}px / ${stats.maxWidth}px`);
-console.log(`Inter-group spacing min/max: ${stats.minSpacing.toFixed(0)}px / ${stats.maxSpacing.toFixed(0)}px`);
-console.log(`Reaction window min/max: ${stats.minReactionMs.toFixed(0)}ms / ${stats.maxReactionMs.toFixed(0)}ms`);
-console.log(`Per-tier candidate counts:`);
-for (const t of TIERS) {
-  const k = `${t.scoreMin}-${t.scoreMax}`;
-  console.log(`  ${k}: ${(stats.perTier[k] || 0)}`);
-}
-console.log(`Per-kind candidate counts:`);
-for (const [k, v] of Object.entries(stats.perKind).sort((a,b) => b[1]-a[1])) {
-  console.log(`  ${k}: ${v}  (${(100*v/stats.candidates).toFixed(1)}%)`);
-}
-console.log(`Spec invariants:`);
-console.log(`  triples before score 101:      ${stats.invariantFailures.tripleBefore101}`);
-console.log(`  doubles before score 15:       ${stats.invariantFailures.doubleBefore15}`);
-console.log(`  below-tier reaction window:    ${stats.invariantFailures.belowReactionFloor}`);
-console.log(`  close doubles before score 75: ${stats.invariantFailures.closeDoubleBefore75}`);
-console.log(`  double recovery violations:    ${stats.invariantFailures.doubleRecoveryViolation}`);
+console.log('\n--- Results ---');
+console.log(`Total sequences: ${stats.sequences}`);
+console.log(`Total candidates: ${stats.candidates}`);
+console.log(`Rejected and retried: ${stats.rejected}`);
+console.log(`Safe fallbacks: ${stats.fallbacks}`);
+console.log(`Impossible sequences: ${stats.failures.length}`);
+console.log(`Fence height: ${stats.minHeight}..${stats.maxHeight}px`);
+console.log(`Fence width: ${stats.minWidth}..${stats.maxWidth}px`);
+console.log(`Inter-group spacing: ${stats.minSpacing.toFixed(0)}..${stats.maxSpacing.toFixed(0)}px`);
+console.log(`Reaction window: ${stats.minReactionMs.toFixed(0)}..${stats.maxReactionMs.toFixed(0)}ms`);
+
 const earlyDoubleRate = 100 * stats.earlyDoubles / Math.max(1, stats.earlyPatterns);
-console.log(`  score 15-30 double rate:       ${earlyDoubleRate.toFixed(2)}%`);
-console.log(``);
-// Sample the speed curve too.
-console.log(`Speed curve (score → gameSpeed):`);
-for (const s of [0, 15, 30, 60, 100, 150, 220, 300, 400]) {
-  console.log(`  score ${s.toString().padStart(3)}: ${speedForScore(s)} px/s`);
+console.log(`Score 15-30 double rate: ${earlyDoubleRate.toFixed(2)}%`);
+
+console.log('\nSpeed curve:');
+const speedSamples = [0, 7, 8, 15, 30, 60, 100, 150, 220, 300, 400];
+let previousSpeed = -Infinity;
+for (const score of speedSamples) {
+  const speed = speedForScore(score);
+  console.log(`  ${score}: ${speed} px/s`);
+  if (speed < previousSpeed) stats.invariantFailures.nonMonotonicSpeed += 1;
+  previousSpeed = speed;
 }
-console.log(``);
+if (speedForScore(0) !== 340 || speedForScore(7) !== 340) stats.invariantFailures.tutorialSpeedChanged += 1;
+if (speedForScore(8) <= 340) stats.invariantFailures.noRampAfter7 += 1;
+
 const rateFailure = earlyDoubleRate < 5 || earlyDoubleRate > 8 ? 1 : 0;
-const invariantFail = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0) + rateFailure;
-if (stats.failures.length > 0 || invariantFail > 0) {
-  console.log(`FAILURES:`);
-  for (const f of stats.failures.slice(0, 20)) {
-    console.log(`  seed=${f.seed} at obstacle ${f.i}: ${f.reasons.join(', ')}`);
+const invariantFailureCount = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0) + rateFailure;
+
+if (stats.failures.length > 0 || invariantFailureCount > 0) {
+  console.log('\nFAILURES:');
+  for (const failure of stats.failures.slice(0, 20)) {
+    console.log(`  seed=${failure.seed} obstacle=${failure.obstacleIndex}: ${failure.reasons.join(', ')}`);
   }
-  if (invariantFail > 0) {
-    console.log(`Invariant violations: ${invariantFail}`);
-  }
+  console.log(`Invariant violations: ${invariantFailureCount}`);
   process.exit(1);
-} else {
-  console.log(`PASS — zero impossible sequences, zero invariant violations across ${stats.candidates} candidates.`);
-  process.exit(0);
 }
+
+console.log(`\nPASS — zero impossible sequences and zero invariant violations across ${stats.candidates} candidates.`);
