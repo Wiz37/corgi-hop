@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { gameState } from './GameState';
 import { dailyMissions, type DailyMissionKind } from './DailyMissions';
 import { balanceTelemetry } from './BalanceTelemetry';
@@ -15,6 +16,13 @@ export interface FunRunSummary {
   bestStreak: number;
   currentStreak: number;
 }
+
+type ObstacleSkin =
+  | 'picket_fence'
+  | 'obstacle_log'
+  | 'obstacle_hay'
+  | 'obstacle_tires'
+  | 'obstacle_cones';
 
 const states = new WeakMap<object, FunRunState>();
 let latestSummary: FunRunSummary = { bestStreak: 0, currentStreak: 0 };
@@ -89,6 +97,112 @@ function spawnBonusBone(scene: any, x: number, y: number, value = 1): void {
   scene.treats.add(bone);
 }
 
+function buildObstacleTextures(scene: any): void {
+  const make = (
+    key: ObstacleSkin,
+    width: number,
+    height: number,
+    draw: (graphics: Phaser.GameObjects.Graphics) => void,
+  ) => {
+    if (scene.textures.exists(key)) return;
+    const graphics = scene.make.graphics({ x: 0, y: 0 }, false);
+    draw(graphics);
+    graphics.generateTexture(key, width, height);
+    graphics.destroy();
+  };
+
+  make('obstacle_log', 240, 120, (g) => {
+    g.fillStyle(0x24304a, 1);
+    g.fillRoundedRect(4, 18, 232, 92, 38);
+    g.fillStyle(0x9a5a2d, 1);
+    g.fillRoundedRect(10, 24, 220, 80, 34);
+    g.fillStyle(0xc98245, 1);
+    g.fillRoundedRect(20, 30, 185, 66, 28);
+    g.lineStyle(5, 0x6d3d20, 1);
+    g.strokeCircle(204, 64, 30);
+    g.strokeCircle(204, 64, 16);
+    g.lineBetween(42, 36, 72, 92);
+    g.lineBetween(92, 32, 122, 96);
+  });
+
+  make('obstacle_hay', 240, 200, (g) => {
+    g.fillStyle(0x24304a, 1);
+    g.fillRoundedRect(5, 8, 230, 184, 28);
+    g.fillStyle(0xf1b928, 1);
+    g.fillRoundedRect(12, 15, 216, 170, 24);
+    g.fillStyle(0xffd95a, 1);
+    g.fillRoundedRect(24, 27, 192, 146, 20);
+    g.fillStyle(0x9c6724, 1);
+    g.fillRect(70, 18, 18, 164);
+    g.fillRect(152, 18, 18, 164);
+    g.lineStyle(4, 0xd19022, 1);
+    for (let y = 45; y <= 155; y += 28) g.lineBetween(30, y, 210, y - 10);
+  });
+
+  make('obstacle_tires', 180, 240, (g) => {
+    const tire = (cx: number, cy: number, rx: number, ry: number) => {
+      g.fillStyle(0x24304a, 1);
+      g.fillEllipse(cx, cy, rx * 2 + 12, ry * 2 + 12);
+      g.fillStyle(0x2f3440, 1);
+      g.fillEllipse(cx, cy, rx * 2, ry * 2);
+      g.fillStyle(0x7d8798, 1);
+      g.fillEllipse(cx, cy, rx * 0.8, ry * 0.8);
+      g.fillStyle(0x18223a, 1);
+      g.fillEllipse(cx, cy, rx * 0.42, ry * 0.42);
+    };
+    tire(90, 188, 70, 34);
+    tire(90, 123, 66, 32);
+    tire(90, 62, 62, 30);
+  });
+
+  make('obstacle_cones', 240, 180, (g) => {
+    const cone = (cx: number, baseY: number, scale: number) => {
+      g.fillStyle(0x24304a, 1);
+      g.fillRoundedRect(cx - 38 * scale, baseY - 13 * scale, 76 * scale, 20 * scale, 6 * scale);
+      g.fillStyle(0xff7a1a, 1);
+      g.fillTriangle(
+        cx, baseY - 128 * scale,
+        cx - 30 * scale, baseY - 14 * scale,
+        cx + 30 * scale, baseY - 14 * scale,
+      );
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(cx - 22 * scale, baseY - 66 * scale, 44 * scale, 16 * scale);
+    };
+    cone(48, 166, 0.86);
+    cone(120, 166, 1);
+    cone(192, 166, 0.86);
+  });
+}
+
+function chooseObstacleSkin(scene: any, spawned: any[], kind: PatternKind): ObstacleSkin {
+  const score = Math.max(0, Number(scene.score) || 0);
+  if (score <= 7) return 'picket_fence';
+
+  const averageHeight = spawned.reduce((sum, obstacle) => sum + Number(obstacle.displayHeight || 0), 0) / spawned.length;
+  const averageWidth = spawned.reduce((sum, obstacle) => sum + Number(obstacle.displayWidth || 0), 0) / spawned.length;
+  const wideAndLow = averageWidth > averageHeight * 0.92;
+  const roll = Math.random();
+
+  if (score <= 14) return roll < 0.34 ? 'obstacle_cones' : roll < 0.55 ? 'obstacle_log' : 'picket_fence';
+  if (kind === 'triple') return roll < 0.42 ? 'obstacle_cones' : roll < 0.72 ? 'obstacle_hay' : 'picket_fence';
+  if (score >= 30 && averageHeight >= 108 && roll < 0.30) return 'obstacle_tires';
+  if (wideAndLow && roll < 0.48) return 'obstacle_log';
+  if (roll < 0.72) return 'obstacle_hay';
+  if (roll < 0.88) return 'obstacle_cones';
+  return 'picket_fence';
+}
+
+function applyObstacleSkin(obstacle: any, skin: ObstacleSkin): void {
+  if (!obstacle?.active || !obstacle?.scene?.textures?.exists?.(skin)) return;
+  const width = Number(obstacle.displayWidth) || 90;
+  const height = Number(obstacle.displayHeight) || 90;
+  obstacle.setTexture(skin);
+  obstacle.setDisplaySize(width, height);
+  obstacle.setAlpha(1);
+  obstacle.clearTint?.();
+  obstacle.setData('funObstacleSkin', skin);
+}
+
 function identifyPassedObstacle(scene: any): any | null {
   const corgiX = Number(scene?.corgi?.x) || 0;
   const candidates = scene?.obstacles?.getChildren?.()
@@ -112,11 +226,6 @@ export function getLatestFunRunSummary(): FunRunSummary {
   return { ...latestSummary };
 }
 
-/**
- * Installs a small runtime feature layer around GameScene. It preserves the
- * existing physics and obstacle generator while adding skill rewards,
- * streaks, daily missions, collectible paths, and local-only balance metrics.
- */
 export function installFunGameplay(GameSceneClass: { prototype: object }): void {
   if (installed) return;
   installed = true;
@@ -125,6 +234,7 @@ export function installFunGameplay(GameSceneClass: { prototype: object }): void 
   const originalCreate = proto.create;
   proto.create = function (...args: unknown[]) {
     const result = originalCreate.apply(this, args);
+    buildObstacleTextures(this);
     states.set(this, {
       streak: 0,
       bestStreak: 0,
@@ -153,7 +263,9 @@ export function installFunGameplay(GameSceneClass: { prototype: object }): void 
     if (spawned.length >= 3) kind = 'triple';
     else if (spawned.length === 2) kind = 'double-mid';
 
+    const skin = chooseObstacleSkin(this, spawned, kind);
     spawned.forEach((obstacle: any, index: number) => {
+      applyObstacleSkin(obstacle, skin);
       obstacle.setData('funPatternKind', kind);
       obstacle.setData('funPatternGroupId', groupId);
       obstacle.setData('funPatternIndex', index);
