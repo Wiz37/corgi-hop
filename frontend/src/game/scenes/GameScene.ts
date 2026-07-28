@@ -68,7 +68,7 @@ export class GameScene extends Phaser.Scene {
   private recentPatternHistory: PatternKind[] = [];
   // Distance in world-pixels a single run frame should "cover". Chosen so
   // the corgi's stride cadence feels natural across the full speed range
-  // (340 → 760 px/s ⇒ 12–27 fps). Prevents the "ice-skating" effect where
+  // (340 → 600 px/s ⇒ 12–21 fps). Prevents the "ice-skating" effect where
   // frames advance at a fixed rate while the world scrolls faster.
   private readonly STRIDE_PIX = 28;
   private score = 0;
@@ -392,7 +392,11 @@ export class GameScene extends Phaser.Scene {
     // safety fallback if the run sheet ever fails to preload.
     let texKey: string;
     let frame: number = 0;
-    if (def.runSheetKey && this.textures.exists(def.runSheetKey)) {
+    // A crash always uses the dedicated funny failure face, regardless of
+    // selected outfit. It needs to read instantly before Game Over appears.
+    if (logicalPose === 'hit' && this.textures.exists('corgi_hit')) {
+      texKey = 'corgi_hit';
+    } else if (def.runSheetKey && this.textures.exists(def.runSheetKey)) {
       texKey = def.runSheetKey;
       switch (logicalPose) {
         case 'run':  frame = 0; break;
@@ -724,16 +728,15 @@ export class GameScene extends Phaser.Scene {
 
     // Difficulty ramp — smooth piecewise-linear curve from the shared
     // HurdleGenerator module. Matches the approved targets:
-    //   score 0→340, 20→390, 50→440, 75→480, 100→520, 150→580, 200→630,
-    //   asymptote 680.  Never reaches the old 760 max, so early / mid game
-    //   no longer feels like a speed wall.
+    //   0→340, 15→360, 30→390, 60→430, 100→470, 150→520,
+    //   220→570, 300+→600. The shared curve hard-caps there.
     this.targetSpeed = hgSpeedForScore(this.score);
   }
 
   private spawnNext(): void {
     // Delegate all obstacle spawning to the shared, physics-validated
     // HurdleGenerator. Same module + same constants that the Node
-    // `validate_hurdles.mjs` script exercises with 10 000 sequences before
+    // `validate_hurdles.mjs` script exercises with 25 000 sequences before
     // release — so anything spawned here is provably clearable.
     const rng: HgRng = {
       next: () => Math.random(),
@@ -743,7 +746,7 @@ export class GameScene extends Phaser.Scene {
     let rejected = 0;
     // Try up to 4 candidates via the shared generator (each one already
     // runs its own retry loop internally). If everything still fails we
-    // fall back to a safe short hurdle — but the 10k validator shows this
+    // fall back to a safe short hurdle — but the 25k validator shows this
     // never happens in practice.
     for (let attempt = 0; attempt < 4; attempt++) {
       const g = generateValidated(this.score, this.gameSpeed, rng, this.recentPatternHistory);
@@ -806,7 +809,8 @@ export class GameScene extends Phaser.Scene {
     // nextRunwayPx. Add half the last fence's width so we measure from its
     // RIGHT edge (matching what the game world would see).
     const last = candidate.fences[candidate.fences.length - 1];
-    const distanceUntilNextSpawn = last.width / 2 + candidate.nextRunwayPx;
+    const clusterOffset = last.x - candidate.fences[0].x;
+    const distanceUntilNextSpawn = clusterOffset + last.width / 2 + candidate.nextRunwayPx;
     this.lastSpawnX = GAME_WIDTH + distanceUntilNextSpawn;
 
     // Telemetry for post-mortem debugging (kept off the wire in prod).
@@ -899,11 +903,28 @@ export class GameScene extends Phaser.Scene {
     this.corgi.anims.stop();
     this.corgi.setAngle(0);
     this.corgi.setFlipX(false);
-    this.tweens.add({ targets: this.corgi, y: this.corgi.y - 40, duration: 300, ease: 'Sine.easeOut' });
+    const b = this.baseScale;
+    this.tweens.add({
+      targets: this.corgi,
+      y: this.corgi.y - 32,
+      scaleX: b * 1.16,
+      scaleY: b * 0.78,
+      duration: 110,
+      yoyo: true,
+      ease: 'Back.easeOut',
+    });
+    const bonk = this.add.text(this.corgi.x + 20, this.corgi.y - 180, 'BONK!', {
+      fontFamily: 'system-ui', fontSize: '52px', fontStyle: '900',
+      color: '#fff45c', stroke: '#7b2948', strokeThickness: 9,
+    }).setOrigin(0.5).setDepth(40).setScale(0.5);
+    this.tweens.add({
+      targets: bonk, scale: 1, y: bonk.y - 24, duration: 160, ease: 'Back.easeOut',
+      onComplete: () => this.tweens.add({ targets: bonk, alpha: 0, delay: 260, duration: 160, onComplete: () => bonk.destroy() }),
+    });
 
     // Save last collided obstacle for potential revive.
     const scene = this;
-    this.time.delayedCall(600, () => {
+    this.time.delayedCall(750, () => {
       scene.scene.launch('GameOverScene', {
         score: scene.score,
         treatsThisRun: scene.treatsThisRun,

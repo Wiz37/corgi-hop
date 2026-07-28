@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 10,000-sequence hurdle validator.
+ * 25,000-sequence hurdle validator.
  *
  * Imports the LIVE game generator from
  *   /app/frontend/src/game/systems/HurdleGenerator.ts
@@ -44,20 +44,24 @@ const stats = {
   maxReactionMs: -Infinity,
   perTier: {},
   perKind: {},
+  earlyPatterns: 0,
+  earlyDoubles: 0,
   invariantFailures: {
     tripleBefore101: 0,
-    doubleBefore31: 0,
+    doubleBefore15: 0,
     belowReactionFloor: 0,
+    closeDoubleBefore75: 0,
+    doubleRecoveryViolation: 0,
   },
   failures: [],
 };
 
 const arc = jumpArc();
-console.log(`\nCorgi-Hop hurdle validator — 10,000-sequence physics audit\n`);
+console.log(`\nCorgi-Hop hurdle validator — 25,000-sequence physics audit\n`);
 console.log(`Physics constants:`);
 console.log(`  jumpVelocity=${PHYSICS.jumpVelocity}  worldGravity=${PHYSICS.worldGravity}`);
 console.log(`  gravityRise=${PHYSICS.gravityRise}  gravityFall=${PHYSICS.gravityFall}`);
-console.log(`  baseSpeed=${PHYSICS.baseSpeed}  maxSpeed=${PHYSICS.maxSpeed}  speedRampK=${PHYSICS.speedRampK}`);
+console.log(`  baseSpeed=${PHYSICS.baseSpeed}  maxSpeed=${PHYSICS.maxSpeed}`);
 console.log(`Derived jump arc:`);
 console.log(`  peak=${arc.peakPx.toFixed(1)}px  ascent=${arc.ascentMs.toFixed(0)}ms  descent=${arc.descentMs.toFixed(0)}ms  total=${arc.totalAirMs.toFixed(0)}ms`);
 console.log(`  range@baseSpeed=${arc.horizontalRangeAtSpeed(PHYSICS.baseSpeed).toFixed(0)}px  range@maxSpeed=${arc.horizontalRangeAtSpeed(PHYSICS.maxSpeed).toFixed(0)}px`);
@@ -73,8 +77,8 @@ for (const t of TIERS) {
   const span = Math.max(1, t.scoreMax === 9999 ? 40 : (t.scoreMax - t.scoreMin + 1));
   for (let s = t.scoreMin; s <= Math.min(t.scoreMax, t.scoreMin + span - 1); s++) scoreSamples.push(s);
 }
-// Anchor stress points requested by the spec: 0/10/20/30/50/75/100/125/150/175/200/250+
-for (const s of [0, 10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300]) {
+// Anchor stress points requested by the current speed curve.
+for (const s of [0, 15, 30, 60, 100, 150, 220, 300, 400]) {
   for (let k = 0; k < 40; k++) scoreSamples.push(s);
 }
 
@@ -140,10 +144,21 @@ for (let seqIdx = 0; seqIdx < TOTAL_SEQUENCES; seqIdx++) {
     stats.perKind[candidate.kind] = (stats.perKind[candidate.kind] || 0) + 1;
     // Spec-mandated invariants — track violations separately from `failures`.
     if (candidate.kind === 'triple' && score < 101) stats.invariantFailures.tripleBefore101 += 1;
-    if ((candidate.kind === 'double-mid' || candidate.kind === 'double-close' || candidate.kind === 'wide-double') && score < 31) {
-      stats.invariantFailures.doubleBefore31 += 1;
+    if ((candidate.kind === 'double-mid' || candidate.kind === 'double-close' || candidate.kind === 'wide-double') && score < 15) {
+      stats.invariantFailures.doubleBefore15 += 1;
     }
     if (candidate.reactionMs < candidate.tier.minReactionMs) stats.invariantFailures.belowReactionFloor += 1;
+    if (candidate.kind === 'double-close' && score < 75) stats.invariantFailures.closeDoubleBefore75 += 1;
+    const isDouble = ['double-mid', 'double-close', 'wide-double'].includes(candidate.kind);
+    if (score >= 15 && score <= 30) {
+      stats.earlyPatterns += 1;
+      if (isDouble) stats.earlyDoubles += 1;
+    }
+    const recentDouble = history.slice(-2)
+      .some(kind => ['double-mid', 'double-close', 'wide-double'].includes(kind));
+    if (recentDouble && candidate.kind !== 'single') {
+      stats.invariantFailures.doubleRecoveryViolation += 1;
+    }
 
     history.push(candidate.kind);
     if (history.length > 5) history.shift();
@@ -192,16 +207,21 @@ for (const [k, v] of Object.entries(stats.perKind).sort((a,b) => b[1]-a[1])) {
 }
 console.log(`Spec invariants:`);
 console.log(`  triples before score 101:      ${stats.invariantFailures.tripleBefore101}`);
-console.log(`  doubles before score 31:       ${stats.invariantFailures.doubleBefore31}`);
+console.log(`  doubles before score 15:       ${stats.invariantFailures.doubleBefore15}`);
 console.log(`  below-tier reaction window:    ${stats.invariantFailures.belowReactionFloor}`);
+console.log(`  close doubles before score 75: ${stats.invariantFailures.closeDoubleBefore75}`);
+console.log(`  double recovery violations:    ${stats.invariantFailures.doubleRecoveryViolation}`);
+const earlyDoubleRate = 100 * stats.earlyDoubles / Math.max(1, stats.earlyPatterns);
+console.log(`  score 15-30 double rate:       ${earlyDoubleRate.toFixed(2)}%`);
 console.log(``);
 // Sample the speed curve too.
 console.log(`Speed curve (score → gameSpeed):`);
-for (const s of [0, 10, 20, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300]) {
+for (const s of [0, 15, 30, 60, 100, 150, 220, 300, 400]) {
   console.log(`  score ${s.toString().padStart(3)}: ${speedForScore(s)} px/s`);
 }
 console.log(``);
-const invariantFail = stats.invariantFailures.tripleBefore101 + stats.invariantFailures.doubleBefore31 + stats.invariantFailures.belowReactionFloor;
+const rateFailure = earlyDoubleRate < 5 || earlyDoubleRate > 8 ? 1 : 0;
+const invariantFail = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0) + rateFailure;
 if (stats.failures.length > 0 || invariantFail > 0) {
   console.log(`FAILURES:`);
   for (const f of stats.failures.slice(0, 20)) {

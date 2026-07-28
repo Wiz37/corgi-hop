@@ -68,12 +68,16 @@ export const CORGIS: CorgiDef[] = [
 // Bones = the "treats" counter. Classic is free. All others cost bones.
 export const CORGI_BONE_PRICE: Record<CorgiId, number> = {
   classic:   0,
-  starter:   500,
-  cowboy:    1000,
-  superhero: 2000,
-  pirate:    5000,
-  astronaut: 10000,
+  starter:   250,
+  cowboy:    500,
+  superhero: 900,
+  pirate:    1400,
+  astronaut: 2200,
 };
+
+// Reserved price point for future rare earnable corgis. Keeping it separate
+// avoids inventing IDs or changing the persisted unlock schema today.
+export const RARE_CORGI_BONE_PRICE = 3500;
 
 export interface Entitlements {
   removeAds: boolean;

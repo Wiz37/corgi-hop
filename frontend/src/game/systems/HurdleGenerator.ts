@@ -3,17 +3,13 @@
  *
  * DIFFICULTY OVERHAUL (July 2026):
  *   • Removed the "three-hurdle wall near score 20" regression.
- *   • Speed curve is now a smooth piecewise-linear interpolation reaching
- *     ~680 px/s only around score 200, instead of maxing out at 760 by score
- *     52.
- *   • Pattern tables retuned: SINGLE-ONLY up to score 30, doubles begin at
- *     31, triples begin only at 101, per the approved spec.
+ *   • Speed increases smoothly from 340 px/s to a 600 px/s hard cap.
+ *   • Rare recovery doubles begin at 15, while close doubles wait until 75.
  *   • Reaction-window enforcement floor raised (0-30: ≥1250 ms, ...
  *     151+: ≥750 ms).
  *   • One-dimension-at-a-time rule: candidates that combine max height +
  *     max width + tight spacing are rejected by validate().
- *   • Anti-repeat: after any triple, the next candidate is forced to a
- *     single-with-generous-spacing.
+ *   • Every double is followed by two normal single recovery patterns.
  *
  * All maths here is pure JavaScript with no Phaser dependency, so the
  * `validate_hurdles.mjs` Node script can `import` this module (via `tsx`)
@@ -25,12 +21,12 @@
 // PHYSICS CONSTANTS — mirror the values in GameScene / main.ts
 // ---------------------------------------------------------------------------
 export const PHYSICS = {
-  worldGravity: 2200,
+  worldGravity: 2100,        // Phaser world gravity in main.ts
   gravityRise:  -300,
   gravityFall:   700,
   jumpVelocity: -950,        // peak ≈ 240 px (~1.5 corgi body-heights)
   baseSpeed:     340,
-  maxSpeed:      680,        // long-term cap (was 760)
+  maxSpeed:      600,        // hard cap
   dogColliderW:  120,
   fenceW:         80,
   maxHurdleH:    150,
@@ -39,30 +35,16 @@ export const PHYSICS = {
   maxHurdleW:    130,
 } as const;
 
-/**
- * Smooth piecewise-linear speed curve — replaces the old
- * "baseSpeed + score * 8" formula that reached maxSpeed at score 52.
- * Anchor points (approved by design spec):
- *
- *   score |  speed
- *      0  |  340
- *     20  |  390
- *     50  |  440
- *     75  |  480
- *    100  |  520
- *    150  |  580
- *    200  |  630
- *    +∞   |  680  (asymptote)
- */
+/** Smooth progressive speed curve shared by gameplay and validation. */
 const SPEED_CURVE: Array<[number, number]> = [
   [  0, 340],
-  [ 20, 390],
-  [ 50, 440],
-  [ 75, 480],
-  [100, 520],
-  [150, 580],
-  [200, 630],
-  [280, 680],
+  [ 15, 360],
+  [ 30, 390],
+  [ 60, 430],
+  [100, 470],
+  [150, 520],
+  [220, 570],
+  [300, 600],
 ];
 
 export function speedForScore(score: number): number {
@@ -105,93 +87,68 @@ export interface PatternSpec {
 }
 
 export const TIERS: DifficultyTier[] = [
-  // Very forgiving opening: the first 10 hurdles are single, short, narrow,
-  // and provide a long reaction window so new players can learn the timing.
   {
-    scoreMin: 0, scoreMax: 10,
-    minReactionMs: 1450,
-    heights: { min: 70, max: 84 },
-    widths:  { min: 56, max: 72 },
+    scoreMin: 0, scoreMax: 14, minReactionMs: 1450,
+    heights: { min: 70, max: 84 }, widths: { min: 56, max: 72 },
     patterns: [{ kind: 'single', weight: 100 }],
   },
-  // Smooth transition after the tutorial opening. Still single-only through
-  // score 30, but height and width expand gradually.
+  // Doubles start at 6%: rare enough to teach the pattern without a spike.
   {
-    scoreMin: 11, scoreMax: 30,
-    minReactionMs: 1300,
-    heights: { min: 70, max: 96 },
-    widths:  { min: 56, max: 80 },
-    patterns: [{ kind: 'single', weight: 100 }],
+    scoreMin: 15, scoreMax: 30, minReactionMs: 1300,
+    heights: { min: 70, max: 96 }, widths: { min: 56, max: 80 },
+    patterns: [{ kind: 'single', weight: 94 }, { kind: 'double-mid', weight: 6 }],
   },
-  // First difficulty step: mostly single, first rare doubles at score 40+
-  // (generator enforces the 40-floor in generateCandidate).
   {
-    scoreMin: 31, scoreMax: 60,
-    minReactionMs: 1100,
-    heights: { min: 74,  max: 115 },
-    widths:  { min: 58,  max: 92  },
+    scoreMin: 31, scoreMax: 60, minReactionMs: 1100,
+    heights: { min: 74, max: 115 }, widths: { min: 58, max: 92 },
     patterns: [
-      { kind: 'single',      weight: 78 },
-      { kind: 'single-tall', weight: 12 },
-      { kind: 'double-mid',  weight: 10 },
+      { kind: 'single', weight: 78 }, { kind: 'single-tall', weight: 12 },
+      { kind: 'double-mid', weight: 10 },
     ],
   },
-  // Skilled mid-game: still no triples.
   {
-    scoreMin: 61, scoreMax: 100,
-    minReactionMs: 950,
-    heights: { min: 78,  max: 128 },
-    widths:  { min: 60,  max: 105 },
+    scoreMin: 61, scoreMax: 74, minReactionMs: 950,
+    heights: { min: 78, max: 128 }, widths: { min: 60, max: 105 },
     patterns: [
-      { kind: 'single',       weight: 60 },
-      { kind: 'single-tall',  weight: 15 },
-      { kind: 'double-mid',   weight: 18 },
-      { kind: 'wide-double',  weight: 7  },
+      { kind: 'single', weight: 60 }, { kind: 'single-tall', weight: 15 },
+      { kind: 'double-mid', weight: 18 }, { kind: 'wide-double', weight: 7 },
     ],
   },
-  // Rare-triples band. Every triple is followed by a forced single.
+  // Close doubles remain completely unavailable before score 75.
   {
-    scoreMin: 101, scoreMax: 150,
-    minReactionMs: 850,
-    heights: { min: 82,  max: 138 },
-    widths:  { min: 62,  max: 115 },
+    scoreMin: 75, scoreMax: 100, minReactionMs: 950,
+    heights: { min: 78, max: 128 }, widths: { min: 60, max: 105 },
     patterns: [
-      { kind: 'single',       weight: 55 },
-      { kind: 'single-tall',  weight: 15 },
-      { kind: 'double-mid',   weight: 20 },
-      { kind: 'wide-double',  weight: 5  },
-      { kind: 'double-close', weight: 3  },
-      { kind: 'triple',       weight: 2  },
+      { kind: 'single', weight: 58 }, { kind: 'single-tall', weight: 15 },
+      { kind: 'double-mid', weight: 17 }, { kind: 'wide-double', weight: 7 },
+      { kind: 'double-close', weight: 3 },
     ],
   },
-  // Late game: more combinations, still fair.
   {
-    scoreMin: 151, scoreMax: 200,
-    minReactionMs: 800,
-    heights: { min: 85,  max: 145 },
-    widths:  { min: 64,  max: 122 },
+    scoreMin: 101, scoreMax: 150, minReactionMs: 850,
+    heights: { min: 82, max: 138 }, widths: { min: 62, max: 115 },
     patterns: [
-      { kind: 'single',       weight: 42 },
-      { kind: 'single-tall',  weight: 13 },
-      { kind: 'double-mid',   weight: 22 },
-      { kind: 'wide-double',  weight: 10 },
-      { kind: 'double-close', weight: 8  },
-      { kind: 'triple',       weight: 5  },
+      { kind: 'single', weight: 55 }, { kind: 'single-tall', weight: 15 },
+      { kind: 'double-mid', weight: 20 }, { kind: 'wide-double', weight: 5 },
+      { kind: 'double-close', weight: 3 }, { kind: 'triple', weight: 2 },
     ],
   },
-  // Endless band. Reaction window floor 750 ms — spec says NEVER below.
   {
-    scoreMin: 201, scoreMax: 9999,
-    minReactionMs: 750,
-    heights: { min: 88,  max: PHYSICS.maxHurdleH },
-    widths:  { min: 66,  max: PHYSICS.maxHurdleW },
+    scoreMin: 151, scoreMax: 200, minReactionMs: 800,
+    heights: { min: 85, max: 145 }, widths: { min: 64, max: 122 },
     patterns: [
-      { kind: 'single',       weight: 38 },
-      { kind: 'single-tall',  weight: 14 },
-      { kind: 'double-mid',   weight: 22 },
-      { kind: 'wide-double',  weight: 10 },
-      { kind: 'double-close', weight: 8  },
-      { kind: 'triple',       weight: 8  },
+      { kind: 'single', weight: 42 }, { kind: 'single-tall', weight: 13 },
+      { kind: 'double-mid', weight: 22 }, { kind: 'wide-double', weight: 10 },
+      { kind: 'double-close', weight: 8 }, { kind: 'triple', weight: 5 },
+    ],
+  },
+  {
+    scoreMin: 201, scoreMax: 9999, minReactionMs: 750,
+    heights: { min: 88, max: PHYSICS.maxHurdleH }, widths: { min: 66, max: PHYSICS.maxHurdleW },
+    patterns: [
+      { kind: 'single', weight: 38 }, { kind: 'single-tall', weight: 14 },
+      { kind: 'double-mid', weight: 22 }, { kind: 'wide-double', weight: 10 },
+      { kind: 'double-close', weight: 8 }, { kind: 'triple', weight: 8 },
     ],
   },
 ];
@@ -268,9 +225,9 @@ export function validate(c: HurdleCandidate): ValidationResult {
     if (f.height > arc.peakPx * 0.68)  reasons.push(`fence exceeds 68% of peakPx ${arc.peakPx.toFixed(0)}: ${f.height}`);
   }
 
-  // 2) Cluster span (multi-fence groups) must fit inside a single jump's range.
+  // 2) Close clusters fit in one jump; recovery doubles are two jumps.
   const oneJumpRange = arc.horizontalRangeAtSpeed(c.gameSpeed);
-  if (c.clusterSpan > oneJumpRange * 0.85) {
+  if ((c.kind === 'double-close' || c.kind === 'triple') && c.clusterSpan > oneJumpRange * 0.85) {
     reasons.push(`cluster span ${c.clusterSpan.toFixed(0)}px > 85% of jump range ${oneJumpRange.toFixed(0)}px`);
   }
 
@@ -280,6 +237,16 @@ export function validate(c: HurdleCandidate): ValidationResult {
     const cur  = c.fences[i];
     const edgeGap = (cur.x - cur.width / 2) - (prev.x + prev.width / 2);
     if (edgeGap < 40) reasons.push(`fences ${i - 1} & ${i} overlap (edge-gap ${edgeGap.toFixed(0)}px)`);
+  }
+
+  // Recovery doubles must leave time to land, settle, and jump again.
+  if ((c.kind === 'double-mid' || c.kind === 'wide-double') && c.fences.length === 2) {
+    const [first, second] = c.fences;
+    const edgeGap = (second.x - second.width / 2) - (first.x + first.width / 2);
+    const required = oneJumpRange
+      + (c.gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000
+      + PHYSICS.dogColliderW / 2;
+    if (edgeGap < required) reasons.push(`double recovery gap ${edgeGap.toFixed(0)}px < required ${required.toFixed(0)}px`);
   }
 
   // 4) Runway to next group must be long enough that the corgi can LAND +
@@ -350,14 +317,16 @@ export function generateCandidate(
 ): HurdleCandidate {
   const tier = tierFor(score);
 
-  // ANTI-REPEAT + POST-TRIPLE SAFETY: after any triple, force a single-with-
-  // generous-spacing on the very next candidate.
+  const isDouble = (k: PatternKind | undefined) =>
+    k === 'double-mid' || k === 'double-close' || k === 'wide-double';
   const lastKind = recentHistory[recentHistory.length - 1];
   let kind: PatternKind;
-  if (lastKind === 'triple') {
+  // A double is always followed by two normal singles. This also makes
+  // consecutive doubles impossible regardless of weighted selection.
+  if (recentHistory.slice(-2).some(isDouble) || lastKind === 'triple') {
     kind = 'single';
   } else {
-    // Weighted pattern pick with same-kind rejection (max 2 in a row).
+    // Weighted pattern pick. Recovery rules above provide the safety cadence.
     const totalW = tier.patterns.reduce((s, p) => s + p.weight, 0);
     kind = tier.patterns[0].kind;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -367,8 +336,11 @@ export function generateCandidate(
         roll -= p.weight;
         if (roll <= 0) { picked = p.kind; break; }
       }
-      // Score floor for doubles / triples per user spec
-      if ((picked === 'double-mid' || picked === 'double-close' || picked === 'wide-double') && score < 40) {
+      if (isDouble(picked) && score < 15) {
+        kind = 'single';
+        continue;
+      }
+      if (picked === 'double-close' && score < 75) {
         kind = 'single';
         continue;
       }
@@ -376,8 +348,6 @@ export function generateCandidate(
         kind = 'single';
         continue;
       }
-      const last2 = recentHistory.slice(-2);
-      if (last2.length === 2 && last2[0] === picked && last2[1] === picked) continue;
       kind = picked;
       break;
     }
@@ -432,27 +402,28 @@ export function generateCandidate(
       break;
     }
     case 'double-mid': {
-      // Two short-ish fences, medium gap.
-      const gap = Math.min(rng.between(260, 340), cap - 100);
-      const f1 = rollFence(); f1.x = baseX;
-      const f2 = rollFence(); f2.x = baseX + gap;
-      // Force at least one of the pair to be easy (short + narrow).
-      f1.height = Math.min(f1.height, Math.round((tier.heights.min + tier.heights.max) / 2));
-      f1.width  = Math.min(f1.width,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
-      fences.push(f1, f2);
+      // Two short, narrow hurdles separated into two complete jumps.
+      const height = rng.between(tier.heights.min, Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.35));
+      const width = rng.between(tier.widths.min, Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.35));
+      const centerGap = oneJumpRange
+        + (gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000
+        + PHYSICS.dogColliderW / 2 + width + rng.between(40, 100);
+      fences.push({ x: baseX, height, width }, { x: baseX + Math.ceil(centerGap), height, width });
       break;
     }
     case 'double-close': {
-      const gap = Math.min(rng.between(180, 230), cap - 80);
+      const gap = Math.min(rng.between(230, 280), cap - 80);
       const height = rng.between(tier.heights.min, Math.round((tier.heights.min + tier.heights.max) / 2));
       const width  = rng.between(tier.widths.min,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
       fences.push({ x: baseX, height, width }, { x: baseX + gap, height, width });
       break;
     }
     case 'wide-double': {
-      const gap = Math.min(rng.between(360, 440), cap - 80);
       const height = rng.between(tier.heights.min, Math.round((tier.heights.min + tier.heights.max) / 2));
-      const width  = rng.between(tier.widths.min,  Math.round((tier.widths.min  + tier.widths.max)  / 2));
+      const width = rng.between(tier.widths.min, Math.round((tier.widths.min + tier.widths.max) / 2));
+      const gap = Math.ceil(oneJumpRange
+        + (gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000
+        + PHYSICS.dogColliderW / 2 + width + rng.between(120, 200));
       fences.push({ x: baseX, height, width }, { x: baseX + gap, height, width });
       break;
     }
