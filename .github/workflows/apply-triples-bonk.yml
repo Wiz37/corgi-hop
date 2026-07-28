@@ -1,0 +1,257 @@
+name: Apply triples and bonk patch
+
+on:
+  push:
+    branches:
+      - triples-from-50
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: ${{ !contains(github.event.head_commit.message, '[triples-bonk-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: triples-from-50
+          fetch-depth: 0
+
+      - name: Apply requested gameplay changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected block not found in {path}:\n{old}")
+              p.write_text(text.replace(old, new, 1))
+
+          generator = "frontend/src/game/systems/HurdleGenerator.ts"
+          validator = "frontend/scripts/validate_hurdles.mjs"
+          game_scene = "frontend/src/game/scenes/GameScene.ts"
+
+          replace_once(
+              generator,
+              """  {
+    scoreMin: 31, scoreMax: 60, minReactionMs: 950,
+    heights: { min: 80, max: 124 }, widths: { min: 62, max: 100 },
+    patterns: [
+      { kind: 'single', weight: 60 },
+      { kind: 'single-tall', weight: 20 },
+      { kind: 'double-mid', weight: 20 },
+    ],
+  },
+  {
+    scoreMin: 61, scoreMax: 74, minReactionMs: 825,
+    heights: { min: 84, max: 136 }, widths: { min: 64, max: 112 },
+    patterns: [
+      { kind: 'single', weight: 45 },
+      { kind: 'single-tall', weight: 20 },
+      { kind: 'double-mid', weight: 25 },
+      { kind: 'wide-double', weight: 10 },
+    ],
+  },
+  {
+    scoreMin: 75, scoreMax: 100, minReactionMs: 825,
+    heights: { min: 86, max: 140 }, widths: { min: 66, max: 116 },
+    patterns: [
+      { kind: 'single', weight: 42 },
+      { kind: 'single-tall', weight: 18 },
+      { kind: 'double-mid', weight: 22 },
+      { kind: 'wide-double', weight: 12 },
+      { kind: 'double-close', weight: 6 },
+    ],
+  },""",
+              """  {
+    scoreMin: 31, scoreMax: 49, minReactionMs: 950,
+    heights: { min: 80, max: 124 }, widths: { min: 62, max: 100 },
+    patterns: [
+      { kind: 'single', weight: 60 },
+      { kind: 'single-tall', weight: 20 },
+      { kind: 'double-mid', weight: 20 },
+    ],
+  },
+  {
+    scoreMin: 50, scoreMax: 60, minReactionMs: 900,
+    heights: { min: 82, max: 128 }, widths: { min: 64, max: 104 },
+    patterns: [
+      { kind: 'single', weight: 52 },
+      { kind: 'single-tall', weight: 20 },
+      { kind: 'double-mid', weight: 22 },
+      { kind: 'triple', weight: 6 },
+    ],
+  },
+  {
+    scoreMin: 61, scoreMax: 74, minReactionMs: 825,
+    heights: { min: 84, max: 136 }, widths: { min: 64, max: 112 },
+    patterns: [
+      { kind: 'single', weight: 42 },
+      { kind: 'single-tall', weight: 18 },
+      { kind: 'double-mid', weight: 24 },
+      { kind: 'wide-double', weight: 10 },
+      { kind: 'triple', weight: 6 },
+    ],
+  },
+  {
+    scoreMin: 75, scoreMax: 100, minReactionMs: 825,
+    heights: { min: 86, max: 140 }, widths: { min: 66, max: 116 },
+    patterns: [
+      { kind: 'single', weight: 38 },
+      { kind: 'single-tall', weight: 16 },
+      { kind: 'double-mid', weight: 22 },
+      { kind: 'wide-double', weight: 12 },
+      { kind: 'double-close', weight: 6 },
+      { kind: 'triple', weight: 6 },
+    ],
+  },""",
+          )
+
+          replace_once(
+              generator,
+              "if (picked === 'triple' && score < 101) continue;",
+              "if (picked === 'triple' && score < 50) continue;",
+          )
+
+          replace_once(
+              validator,
+              """  earlyPatterns: 0,
+  earlyDoubles: 0,
+  invariantFailures: {
+    tripleBefore101: 0,""",
+              """  earlyPatterns: 0,
+  earlyDoubles: 0,
+  tripleWindowPatterns: 0,
+  tripleWindowCount: 0,
+  invariantFailures: {
+    tripleBefore50: 0,""",
+          )
+          replace_once(
+              validator,
+              "for (const score of [0, 7, 8, 15, 30, 60, 75, 100, 101, 150, 200, 220, 300, 400]) {",
+              "for (const score of [0, 7, 8, 15, 30, 49, 50, 60, 75, 100, 101, 150, 200, 220, 300, 400]) {",
+          )
+          replace_once(
+              validator,
+              "if (candidate.kind === 'triple' && score < 101) stats.invariantFailures.tripleBefore101 += 1;",
+              "if (candidate.kind === 'triple' && score < 50) stats.invariantFailures.tripleBefore50 += 1;",
+          )
+          replace_once(
+              validator,
+              """    if (score >= 15 && score <= 30) {
+      stats.earlyPatterns += 1;
+      if (candidateIsDouble) stats.earlyDoubles += 1;
+    }
+    const recentDouble""",
+              """    if (score >= 15 && score <= 30) {
+      stats.earlyPatterns += 1;
+      if (candidateIsDouble) stats.earlyDoubles += 1;
+    }
+    if (score >= 50 && score <= 74) {
+      stats.tripleWindowPatterns += 1;
+      if (candidate.kind === 'triple') stats.tripleWindowCount += 1;
+    }
+    const recentDouble""",
+          )
+          replace_once(
+              validator,
+              """const earlyDoubleRate = 100 * stats.earlyDoubles / Math.max(1, stats.earlyPatterns);
+console.log(`Score 15-30 double rate: ${earlyDoubleRate.toFixed(2)}%`);""",
+              """const earlyDoubleRate = 100 * stats.earlyDoubles / Math.max(1, stats.earlyPatterns);
+const tripleRate = 100 * stats.tripleWindowCount / Math.max(1, stats.tripleWindowPatterns);
+console.log(`Score 15-30 double rate: ${earlyDoubleRate.toFixed(2)}%`);
+console.log(`Score 50-74 triple rate: ${tripleRate.toFixed(2)}%`);""",
+          )
+          replace_once(
+              validator,
+              """const rateFailure = earlyDoubleRate < 8 || earlyDoubleRate > 11 ? 1 : 0;
+const invariantFailureCount = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0) + rateFailure;""",
+              """const doubleRateFailure = earlyDoubleRate < 8 || earlyDoubleRate > 11 ? 1 : 0;
+const tripleRateFailure = tripleRate < 3 || tripleRate > 8 ? 1 : 0;
+const invariantFailureCount = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0)
+  + doubleRateFailure + tripleRateFailure;""",
+          )
+
+          replace_once(
+              game_scene,
+              """    const bonk = this.add.text(this.corgi.x + 20, this.corgi.y - 180, 'BONK!', {
+      fontFamily: 'system-ui', fontSize: '52px', fontStyle: '900',
+      color: '#fff45c', stroke: '#7b2948', strokeThickness: 9,
+    }).setOrigin(0.5).setDepth(40).setScale(0.5);
+    this.tweens.add({
+      targets: bonk, scale: 1, y: bonk.y - 24, duration: 160, ease: 'Back.easeOut',
+      onComplete: () => this.tweens.add({ targets: bonk, alpha: 0, delay: 260, duration: 160, onComplete: () => bonk.destroy() }),
+    });""",
+              """    const xEyes = this.add.text(this.corgi.x + 42, this.corgi.y - 108, 'X   X', {
+      fontFamily: 'system-ui', fontSize: '27px', fontStyle: '900',
+      color: '#18223a', stroke: '#ffffff', strokeThickness: 5,
+    }).setOrigin(0.5).setDepth(42);
+    this.tweens.add({
+      targets: xEyes,
+      y: xEyes.y - 32,
+      duration: 110,
+      yoyo: true,
+      ease: 'Back.easeOut',
+      onComplete: () => this.tweens.add({
+        targets: xEyes, alpha: 0, delay: 360, duration: 140,
+        onComplete: () => xEyes.destroy(),
+      }),
+    });
+
+    const bonk = this.add.text(this.corgi.x + 20, this.corgi.y - 180, 'BONK!', {
+      fontFamily: 'system-ui', fontSize: '52px', fontStyle: '900',
+      color: '#fff45c', stroke: '#7b2948', strokeThickness: 9,
+    }).setOrigin(0.5).setDepth(40).setScale(0.5);
+    this.tweens.add({
+      targets: bonk, scale: 1, y: bonk.y - 24, duration: 160, ease: 'Back.easeOut',
+      onComplete: () => this.tweens.add({ targets: bonk, alpha: 0, delay: 260, duration: 160, onComplete: () => bonk.destroy() }),
+    });""",
+          )
+          PY
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: TypeScript check
+        working-directory: frontend
+        run: ./node_modules/.bin/tsc --noEmit
+
+      - name: Vite build
+        working-directory: frontend
+        run: ./node_modules/.bin/vite build
+
+      - name: Validate hurdle generation
+        working-directory: frontend
+        shell: bash
+        run: |
+          rm -rf /tmp/corgi-validate
+          mkdir /tmp/corgi-validate
+          ./node_modules/.bin/tsc src/game/systems/HurdleGenerator.ts \
+            --outDir /tmp/corgi-validate \
+            --module ES2020 \
+            --target ES2020 \
+            --moduleResolution node \
+            --skipLibCheck
+          cp /tmp/corgi-validate/HurdleGenerator.js /tmp/corgi-validate/HurdleGenerator.mjs
+          sed "s#'../src/game/systems/HurdleGenerator.ts'#'./HurdleGenerator.mjs'#" \
+            scripts/validate_hurdles.mjs > /tmp/corgi-validate/validate_hurdles.mjs
+          node /tmp/corgi-validate/validate_hurdles.mjs
+
+      - name: Commit tested patch
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-triples-bonk.yml
+          git diff --check
+          git config user.name "Corgi Hop Bot"
+          git config user.email "actions@github.com"
+          git add frontend/src/game/systems/HurdleGenerator.ts \
+                  frontend/scripts/validate_hurdles.mjs \
+                  frontend/src/game/scenes/GameScene.ts \
+                  .github/workflows/apply-triples-bonk.yml
+          git commit -m "Start triples at 50 and add X-eyes bonk [triples-bonk-applied]"
+          git push origin HEAD:triples-from-50
