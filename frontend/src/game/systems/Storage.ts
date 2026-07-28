@@ -65,6 +65,7 @@ export const storage = {
 
 export const STORAGE_KEYS = {
   bestScore: 'best_score',
+  bestStreak: 'best_streak',
   treats: 'treats',
   selectedCorgi: 'selected_corgi',
   ownedCorgis: 'owned_corgis',
@@ -82,4 +83,6 @@ export const STORAGE_KEYS = {
   totalTreatsEarned: 'total_treats_earned',
   totalJumps: 'total_jumps',
   achievements: 'achievements',
+  dailyMissions: 'daily_missions',
+  balanceTelemetry: 'balance_telemetry',
 } as const;
