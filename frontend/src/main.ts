@@ -3,6 +3,7 @@ import { BootScene } from './game/scenes/BootScene';
 import { PreloadScene } from './game/scenes/PreloadScene';
 import { MenuScene } from './game/scenes/MenuScene';
 import { GameScene } from './game/scenes/GameScene';
+import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -19,6 +20,9 @@ export const GAME_WIDTH = 720;
 export const GAME_HEIGHT = 1280;
 
 function boot() {
+  // Add skill rewards, streaks, daily missions, and collectible paths without
+  // changing the existing jump physics or obstacle validation.
+  installFunGameplay(GameScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
   // Safari and iOS WKWebView both suspend the audio context until then.
   sound.init();
