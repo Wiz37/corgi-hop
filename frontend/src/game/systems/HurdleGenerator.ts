@@ -1,15 +1,15 @@
 /**
- * HurdleGenerator — the authoritative obstacle spawn engine for Corgi Hop.
+ * HurdleGenerator — authoritative obstacle generation for Corgi Hop.
  *
- * DIFFICULTY OVERHAUL (TestFlight balance pass, July 2026):
- *   • Hurdles 0–7 remain tutorial-easy; difficulty starts rising at 8.
- *   • Easy two-jump doubles begin at score 15.
- *   • Double-hurdle spacing scales from the real jump arc so the corgi can
- *     land, recover, take a stride, and jump again.
- *   • Two guaranteed single patterns follow every double set.
- *   • Speed rises smoothly from 340 px/s and caps at 600 px/s around score 300.
- *   • Close doubles stay disabled until score 75; triples still begin at 101.
- *   • Reaction windows and one-dimension-at-a-time validation remain enforced.
+ * HARDER BALANCE PASS (July 2026):
+ *   • Hurdles 0–7 remain a predictable tutorial at 340 px/s.
+ *   • From hurdle 8 onward, speed gain above the tutorial speed is exactly
+ *     1.5× the previous curve at every anchor.
+ *   • Tall, double, close-double, wide-double, and triple patterns occur more
+ *     often after the tutorial.
+ *   • Hurdles become taller/wider sooner and recovery runways are shorter.
+ *   • Physics validation, double recovery, and impossible-pattern rejection
+ *     remain enforced.
  */
 
 export const PHYSICS = {
@@ -18,7 +18,7 @@ export const PHYSICS = {
   gravityFall: 700,
   jumpVelocity: -950,
   baseSpeed: 340,
-  maxSpeed: 600,
+  maxSpeed: 730,
   dogColliderW: 120,
   fenceW: 80,
   maxHurdleH: 150,
@@ -27,16 +27,21 @@ export const PHYSICS = {
   maxHurdleW: 130,
 } as const;
 
+/**
+ * Previous post-tutorial gain over 340 was multiplied by 1.5:
+ * 15: +20→+30, 30: +50→+75, 60: +90→+135, 100: +130→+195,
+ * 150: +180→+270, 220: +230→+345, 300: +260→+390.
+ */
 const SPEED_CURVE: Array<[number, number]> = [
   [0, 340],
   [7, 340],
-  [15, 360],
-  [30, 390],
-  [60, 430],
-  [100, 470],
-  [150, 520],
-  [220, 570],
-  [300, 600],
+  [15, 370],
+  [30, 415],
+  [60, 475],
+  [100, 535],
+  [150, 610],
+  [220, 685],
+  [300, 730],
 ];
 
 export function speedForScore(score: number): number {
@@ -81,86 +86,87 @@ export const TIERS: DifficultyTier[] = [
     patterns: [{ kind: 'single', weight: 100 }],
   },
   {
-    scoreMin: 8, scoreMax: 14, minReactionMs: 1380,
-    heights: { min: 70, max: 90 }, widths: { min: 56, max: 76 },
+    scoreMin: 8, scoreMax: 14, minReactionMs: 1200,
+    heights: { min: 74, max: 98 }, widths: { min: 60, max: 82 },
     patterns: [
-      { kind: 'single', weight: 88 },
-      { kind: 'single-tall', weight: 12 },
+      { kind: 'single', weight: 80 },
+      { kind: 'single-tall', weight: 20 },
     ],
   },
   {
-    scoreMin: 15, scoreMax: 30, minReactionMs: 1300,
-    heights: { min: 70, max: 96 }, widths: { min: 56, max: 80 },
+    scoreMin: 15, scoreMax: 30, minReactionMs: 1125,
+    heights: { min: 74, max: 104 }, widths: { min: 60, max: 86 },
     patterns: [
-      { kind: 'single', weight: 94 },
-      { kind: 'double-mid', weight: 6 },
+      { kind: 'single', weight: 86 },
+      { kind: 'single-tall', weight: 5 },
+      { kind: 'double-mid', weight: 9 },
     ],
   },
   {
-    scoreMin: 31, scoreMax: 60, minReactionMs: 1100,
-    heights: { min: 74, max: 115 }, widths: { min: 58, max: 92 },
-    patterns: [
-      { kind: 'single', weight: 78 },
-      { kind: 'single-tall', weight: 12 },
-      { kind: 'double-mid', weight: 10 },
-    ],
-  },
-  {
-    scoreMin: 61, scoreMax: 74, minReactionMs: 950,
-    heights: { min: 78, max: 128 }, widths: { min: 60, max: 105 },
+    scoreMin: 31, scoreMax: 60, minReactionMs: 950,
+    heights: { min: 80, max: 124 }, widths: { min: 62, max: 100 },
     patterns: [
       { kind: 'single', weight: 60 },
-      { kind: 'single-tall', weight: 15 },
-      { kind: 'double-mid', weight: 18 },
-      { kind: 'wide-double', weight: 7 },
-    ],
-  },
-  {
-    scoreMin: 75, scoreMax: 100, minReactionMs: 950,
-    heights: { min: 78, max: 128 }, widths: { min: 60, max: 105 },
-    patterns: [
-      { kind: 'single', weight: 58 },
-      { kind: 'single-tall', weight: 15 },
-      { kind: 'double-mid', weight: 17 },
-      { kind: 'wide-double', weight: 7 },
-      { kind: 'double-close', weight: 3 },
-    ],
-  },
-  {
-    scoreMin: 101, scoreMax: 150, minReactionMs: 850,
-    heights: { min: 82, max: 138 }, widths: { min: 62, max: 115 },
-    patterns: [
-      { kind: 'single', weight: 55 },
-      { kind: 'single-tall', weight: 15 },
+      { kind: 'single-tall', weight: 20 },
       { kind: 'double-mid', weight: 20 },
-      { kind: 'wide-double', weight: 5 },
-      { kind: 'double-close', weight: 3 },
-      { kind: 'triple', weight: 2 },
     ],
   },
   {
-    scoreMin: 151, scoreMax: 200, minReactionMs: 800,
-    heights: { min: 85, max: 145 }, widths: { min: 64, max: 122 },
+    scoreMin: 61, scoreMax: 74, minReactionMs: 825,
+    heights: { min: 84, max: 136 }, widths: { min: 64, max: 112 },
+    patterns: [
+      { kind: 'single', weight: 45 },
+      { kind: 'single-tall', weight: 20 },
+      { kind: 'double-mid', weight: 25 },
+      { kind: 'wide-double', weight: 10 },
+    ],
+  },
+  {
+    scoreMin: 75, scoreMax: 100, minReactionMs: 825,
+    heights: { min: 86, max: 140 }, widths: { min: 66, max: 116 },
     patterns: [
       { kind: 'single', weight: 42 },
-      { kind: 'single-tall', weight: 13 },
+      { kind: 'single-tall', weight: 18 },
       { kind: 'double-mid', weight: 22 },
-      { kind: 'wide-double', weight: 10 },
-      { kind: 'double-close', weight: 8 },
-      { kind: 'triple', weight: 5 },
+      { kind: 'wide-double', weight: 12 },
+      { kind: 'double-close', weight: 6 },
     ],
   },
   {
-    scoreMin: 201, scoreMax: 9999, minReactionMs: 750,
-    heights: { min: 88, max: PHYSICS.maxHurdleH },
-    widths: { min: 66, max: PHYSICS.maxHurdleW },
+    scoreMin: 101, scoreMax: 150, minReactionMs: 760,
+    heights: { min: 90, max: 145 }, widths: { min: 68, max: 122 },
     patterns: [
       { kind: 'single', weight: 38 },
-      { kind: 'single-tall', weight: 14 },
-      { kind: 'double-mid', weight: 22 },
-      { kind: 'wide-double', weight: 10 },
-      { kind: 'double-close', weight: 8 },
-      { kind: 'triple', weight: 8 },
+      { kind: 'single-tall', weight: 18 },
+      { kind: 'double-mid', weight: 24 },
+      { kind: 'wide-double', weight: 8 },
+      { kind: 'double-close', weight: 6 },
+      { kind: 'triple', weight: 6 },
+    ],
+  },
+  {
+    scoreMin: 151, scoreMax: 200, minReactionMs: 720,
+    heights: { min: 94, max: 150 }, widths: { min: 70, max: 128 },
+    patterns: [
+      { kind: 'single', weight: 28 },
+      { kind: 'single-tall', weight: 16 },
+      { kind: 'double-mid', weight: 25 },
+      { kind: 'wide-double', weight: 12 },
+      { kind: 'double-close', weight: 10 },
+      { kind: 'triple', weight: 9 },
+    ],
+  },
+  {
+    scoreMin: 201, scoreMax: 9999, minReactionMs: 680,
+    heights: { min: 98, max: PHYSICS.maxHurdleH },
+    widths: { min: 72, max: PHYSICS.maxHurdleW },
+    patterns: [
+      { kind: 'single', weight: 24 },
+      { kind: 'single-tall', weight: 16 },
+      { kind: 'double-mid', weight: 26 },
+      { kind: 'wide-double', weight: 13 },
+      { kind: 'double-close', weight: 11 },
+      { kind: 'triple', weight: 10 },
     ],
   },
 ];
@@ -219,8 +225,8 @@ export interface ValidationResult {
 }
 
 const LANDING_MS = 90;
-const RECOVERY_BUFFER = 130;
-const BETWEEN_JUMP_STRIDE_MS = 90;
+const RECOVERY_BUFFER = 105;
+const BETWEEN_JUMP_STRIDE_MS = 65;
 
 const isDoubleKind = (kind: PatternKind): boolean =>
   kind === 'double-mid' || kind === 'double-close' || kind === 'wide-double';
@@ -250,12 +256,12 @@ export function validate(candidate: HurdleCandidate): ValidationResult {
     if (centerGap < minimumCenterGap) {
       reasons.push(`double center-gap ${centerGap.toFixed(0)}px < minimum ${minimumCenterGap}px`);
     }
-    const easyHeightMax = candidate.tier.heights.min + (candidate.tier.heights.max - candidate.tier.heights.min) * 0.55;
-    const easyWidthMax = candidate.tier.widths.min + (candidate.tier.widths.max - candidate.tier.widths.min) * 0.55;
+    const easyHeightMax = candidate.tier.heights.min + (candidate.tier.heights.max - candidate.tier.heights.min) * 0.58;
+    const easyWidthMax = candidate.tier.widths.min + (candidate.tier.widths.max - candidate.tier.widths.min) * 0.58;
     if (candidate.fences.some((fence) => fence.height > easyHeightMax || fence.width > easyWidthMax)) {
-      reasons.push('double contains a fence outside the easy height/width band');
+      reasons.push('double contains a fence outside the fair double band');
     }
-  } else if (candidate.kind === 'triple' && candidate.clusterSpan > oneJumpRange * 0.85) {
+  } else if (candidate.kind === 'triple' && candidate.clusterSpan > oneJumpRange * 0.82) {
     reasons.push(`triple span ${candidate.clusterSpan.toFixed(0)}px exceeds jump range`);
   }
 
@@ -268,7 +274,7 @@ export function validate(candidate: HurdleCandidate): ValidationResult {
 
   const strideBuffer = PHYSICS.dogColliderW + 40;
   const landingRunway = (candidate.gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000;
-  const requiredRunway = oneJumpRange * 0.55 + strideBuffer + landingRunway;
+  const requiredRunway = oneJumpRange * 0.5 + strideBuffer + landingRunway;
   if (candidate.nextRunwayPx < requiredRunway) {
     reasons.push(`runway ${candidate.nextRunwayPx.toFixed(0)}px < required ${requiredRunway.toFixed(0)}px`);
   }
@@ -278,8 +284,8 @@ export function validate(candidate: HurdleCandidate): ValidationResult {
 
   const heightBand = candidate.tier.heights.max - candidate.tier.heights.min;
   const widthBand = candidate.tier.widths.max - candidate.tier.widths.min;
-  const nearMaxHeight = (height: number) => (height - candidate.tier.heights.min) > heightBand * 0.85;
-  const nearMaxWidth = (width: number) => (width - candidate.tier.widths.min) > widthBand * 0.85;
+  const nearMaxHeight = (height: number) => (height - candidate.tier.heights.min) > heightBand * 0.88;
+  const nearMaxWidth = (width: number) => (width - candidate.tier.widths.min) > widthBand * 0.88;
   for (const fence of candidate.fences) {
     if (nearMaxHeight(fence.height) && nearMaxWidth(fence.width)) {
       reasons.push('fence combines maximum height and width');
@@ -295,7 +301,7 @@ export function validate(candidate: HurdleCandidate): ValidationResult {
 
 export interface Rng {
   next: () => number;
-  between: (a: number, b: number) => number;
+  between: (minimum: number, maximum: number) => number;
 }
 
 export function makeRng(seed: number): Rng {
@@ -313,6 +319,16 @@ export function makeRng(seed: number): Rng {
   };
 }
 
+function weightedPattern(tier: DifficultyTier, rng: Rng): PatternKind {
+  const totalWeight = tier.patterns.reduce((sum, pattern) => sum + pattern.weight, 0);
+  let roll = rng.next() * totalWeight;
+  for (const pattern of tier.patterns) {
+    roll -= pattern.weight;
+    if (roll <= 0) return pattern.kind;
+  }
+  return tier.patterns[tier.patterns.length - 1].kind;
+}
+
 export function generateCandidate(
   score: number,
   gameSpeed: number,
@@ -322,35 +338,15 @@ export function generateCandidate(
   const tier = tierFor(score);
   const lastKind = recentHistory[recentHistory.length - 1];
   const doubleInLastTwo = recentHistory.slice(-2).some(isDoubleKind);
-  let kind: PatternKind;
+  let kind: PatternKind = 'single';
 
-  if (lastKind === 'triple' || doubleInLastTwo) {
-    kind = 'single';
-  } else {
-    const totalWeight = tier.patterns.reduce((sum, pattern) => sum + pattern.weight, 0);
-    kind = tier.patterns[0].kind;
+  // Preserve the two-single recovery cadence after doubles and one single after triples.
+  if (lastKind !== 'triple' && !doubleInLastTwo) {
     for (let attempt = 0; attempt < 8; attempt++) {
-      let roll = rng.next() * totalWeight;
-      let picked = tier.patterns[0].kind;
-      for (const pattern of tier.patterns) {
-        roll -= pattern.weight;
-        if (roll <= 0) {
-          picked = pattern.kind;
-          break;
-        }
-      }
-      if (isDoubleKind(picked) && score < 15) {
-        kind = 'single';
-        continue;
-      }
-      if (picked === 'double-close' && score < 75) {
-        kind = 'single';
-        continue;
-      }
-      if (picked === 'triple' && score < 101) {
-        kind = 'single';
-        continue;
-      }
+      const picked = weightedPattern(tier, rng);
+      if (isDoubleKind(picked) && score < 15) continue;
+      if (picked === 'double-close' && score < 75) continue;
+      if (picked === 'triple' && score < 101) continue;
       const lastTwo = recentHistory.slice(-2);
       if (picked !== 'single' && lastTwo.length === 2 && lastTwo[0] === picked && lastTwo[1] === picked) continue;
       kind = picked;
@@ -360,17 +356,16 @@ export function generateCandidate(
 
   const arc = jumpArc();
   const oneJumpRange = arc.horizontalRangeAtSpeed(gameSpeed);
-  const tripleSpanCap = Math.min(oneJumpRange * 0.8, 900);
   const hardAxis = (): 'height' | 'width' | 'spacing' => {
     const roll = rng.next();
-    if (roll < 0.34) return 'height';
-    if (roll < 0.68) return 'width';
+    if (roll < 0.4) return 'height';
+    if (roll < 0.8) return 'width';
     return 'spacing';
   };
   const rollFence = (): FenceSpec => {
     const axis = hardAxis();
-    const heightMiddle = (tier.heights.min + tier.heights.max) / 2;
-    const widthMiddle = (tier.widths.min + tier.widths.max) / 2;
+    const heightMiddle = tier.heights.min + (tier.heights.max - tier.heights.min) * 0.58;
+    const widthMiddle = tier.widths.min + (tier.widths.max - tier.widths.min) * 0.58;
     const height = axis === 'height'
       ? rng.between(Math.round(heightMiddle), tier.heights.max)
       : rng.between(tier.heights.min, Math.round(heightMiddle));
@@ -390,8 +385,9 @@ export function generateCandidate(
       break;
     }
     case 'single-tall': {
-      const height = rng.between(Math.round((tier.heights.min + tier.heights.max) / 2), tier.heights.max);
-      const width = rng.between(tier.widths.min, Math.round((tier.widths.min + tier.widths.max) / 2));
+      const heightFloor = tier.heights.min + (tier.heights.max - tier.heights.min) * 0.62;
+      const height = rng.between(Math.round(heightFloor), tier.heights.max);
+      const width = rng.between(tier.widths.min, Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.48));
       fences.push({ x: baseX, height, width });
       break;
     }
@@ -400,38 +396,37 @@ export function generateCandidate(
     case 'wide-double': {
       const minimumGap = minimumDoubleCenterGap(gameSpeed);
       const extraByKind: Record<'double-mid' | 'double-close' | 'wide-double', [number, number]> = {
-        'double-close': [20, 55],
-        'double-mid': [55, 100],
-        'wide-double': [90, 150],
+        'double-close': [10, 30],
+        'double-mid': [30, 65],
+        'wide-double': [55, 100],
       };
       const [extraMinimum, extraMaximum] = extraByKind[kind];
       const gap = minimumGap + rng.between(extraMinimum, extraMaximum);
-      const easyHeightMax = Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.5);
-      const easyWidthMax = Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.5);
+      const fairHeightMax = Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.56);
+      const fairWidthMax = Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.56);
       fences.push(
         {
           x: baseX,
-          height: rng.between(tier.heights.min, easyHeightMax),
-          width: rng.between(tier.widths.min, easyWidthMax),
+          height: rng.between(tier.heights.min, fairHeightMax),
+          width: rng.between(tier.widths.min, fairWidthMax),
         },
         {
           x: baseX + gap,
-          height: rng.between(tier.heights.min, easyHeightMax),
-          width: rng.between(tier.widths.min, easyWidthMax),
+          height: rng.between(tier.heights.min, fairHeightMax),
+          width: rng.between(tier.widths.min, fairWidthMax),
         },
       );
       break;
     }
     case 'triple': {
-      let firstGap = rng.between(210, 270);
-      let secondGap = rng.between(210, 270);
-      if (firstGap + secondGap + 160 > tripleSpanCap) {
-        const scale = (tripleSpanCap - 160) / (firstGap + secondGap);
-        firstGap = Math.max(180, Math.floor(firstGap * scale));
-        secondGap = Math.max(180, Math.floor(secondGap * scale));
-      }
-      const height = rng.between(tier.heights.min, Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.4));
-      const width = rng.between(tier.widths.min, Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.4));
+      const heightMax = Math.round(tier.heights.min + (tier.heights.max - tier.heights.min) * 0.38);
+      const widthMax = Math.round(tier.widths.min + (tier.widths.max - tier.widths.min) * 0.38);
+      const height = rng.between(tier.heights.min, heightMax);
+      const width = rng.between(tier.widths.min, widthMax);
+      const targetSpan = oneJumpRange * rng.between(72, 80) / 100;
+      const totalCenterSpan = Math.max(width * 2 + 90, targetSpan - width);
+      const firstGap = Math.round(totalCenterSpan * rng.between(46, 54) / 100);
+      const secondGap = Math.round(totalCenterSpan - firstGap);
       fences.push(
         { x: baseX, height, width },
         { x: baseX + firstGap, height, width },
@@ -446,10 +441,10 @@ export function generateCandidate(
   const clusterSpan = (last.x + last.width / 2) - (first.x - first.width / 2);
   const strideBuffer = PHYSICS.dogColliderW + 40;
   const landingRunway = (gameSpeed * (LANDING_MS + RECOVERY_BUFFER)) / 1000;
-  const baseRunway = arc.horizontalRangeAtSpeed(gameSpeed) * 0.55 + strideBuffer + landingRunway;
-  const multiRecovery = isDoubleKind(kind) ? 240 : kind === 'triple' ? 300 : 0;
+  const baseRunway = oneJumpRange * 0.5 + strideBuffer + landingRunway;
+  const multiRecovery = isDoubleKind(kind) ? 170 : kind === 'triple' ? 210 : 0;
   const nextRunwayPx = Math.max(
-    baseRunway + rng.between(140, 340),
+    baseRunway + rng.between(75, 220),
     baseRunway + multiRecovery,
     (tier.minReactionMs / 1000) * gameSpeed + strideBuffer,
   );
@@ -473,6 +468,7 @@ export function generateValidated(
     if (validate(candidate).ok) return { candidate, rejected };
     rejected += 1;
   }
+
   const tier = tierFor(score);
   const arc = jumpArc();
   const safe: HurdleCandidate = {
@@ -482,7 +478,7 @@ export function generateValidated(
     kind: 'single',
     fences: [{ x: 840, height: tier.heights.min + 5, width: tier.widths.min + 5 }],
     clusterSpan: tier.widths.min + 5,
-    nextRunwayPx: arc.horizontalRangeAtSpeed(gameSpeed) * 0.9 + 220,
+    nextRunwayPx: arc.horizontalRangeAtSpeed(gameSpeed) * 0.8 + 190,
     reactionMs: 9999,
   };
   return { candidate: safe, rejected };
