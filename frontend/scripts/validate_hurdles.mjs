@@ -12,6 +12,10 @@ import {
 const TOTAL_SEQUENCES = 25000;
 const OBSTACLES_PER_SEQUENCE = 30;
 const DOUBLE_KINDS = ['double-mid', 'double-close', 'wide-double'];
+const OLD_SPEED_CURVE = new Map([
+  [15, 360], [30, 390], [60, 430], [100, 470],
+  [150, 520], [220, 570], [300, 600],
+]);
 
 const stats = {
   sequences: 0,
@@ -39,12 +43,13 @@ const stats = {
     tutorialSpeedChanged: 0,
     noRampAfter7: 0,
     nonMonotonicSpeed: 0,
+    speedGainBelowFiftyPercent: 0,
   },
   failures: [],
 };
 
 const arc = jumpArc();
-console.log(`\nCorgi-Hop hurdle validator — 25,000-sequence physics audit\n`);
+console.log(`\nCorgi-Hop harder-balance validator — 25,000-sequence physics audit\n`);
 console.log(`Physics: jump=${PHYSICS.jumpVelocity}, gravity=${PHYSICS.worldGravity}, speed=${PHYSICS.baseSpeed}..${PHYSICS.maxSpeed}`);
 console.log(`Jump arc: peak=${arc.peakPx.toFixed(1)}px, air=${arc.totalAirMs.toFixed(0)}ms`);
 console.log('Tiers:');
@@ -59,7 +64,7 @@ for (const tier of TIERS) {
     scoreSamples.push(score);
   }
 }
-for (const score of [0, 7, 8, 15, 30, 60, 100, 150, 220, 300, 400]) {
+for (const score of [0, 7, 8, 15, 30, 60, 75, 100, 101, 150, 200, 220, 300, 400]) {
   for (let repeat = 0; repeat < 40; repeat++) scoreSamples.push(score);
 }
 
@@ -137,7 +142,7 @@ for (let sequenceIndex = 0; sequenceIndex < TOTAL_SEQUENCES; sequenceIndex++) {
     const finalFence = worldFences[worldFences.length - 1];
     const finalEdge = finalFence.x + finalFence.width / 2;
     worldOffset = finalEdge + candidate.nextRunwayPx + groupBaseX;
-    score = Math.min(120, score + 1);
+    score = Math.min(400, score + 1);
   }
 
   stats.sequences += 1;
@@ -158,7 +163,7 @@ console.log(`Reaction window: ${stats.minReactionMs.toFixed(0)}..${stats.maxReac
 const earlyDoubleRate = 100 * stats.earlyDoubles / Math.max(1, stats.earlyPatterns);
 console.log(`Score 15-30 double rate: ${earlyDoubleRate.toFixed(2)}%`);
 
-console.log('\nSpeed curve:');
+console.log('\nSpeed curve and 50% gain check:');
 const speedSamples = [0, 7, 8, 15, 30, 60, 100, 150, 220, 300, 400];
 let previousSpeed = -Infinity;
 for (const score of speedSamples) {
@@ -169,8 +174,16 @@ for (const score of speedSamples) {
 }
 if (speedForScore(0) !== 340 || speedForScore(7) !== 340) stats.invariantFailures.tutorialSpeedChanged += 1;
 if (speedForScore(8) <= 340) stats.invariantFailures.noRampAfter7 += 1;
+for (const [score, oldSpeed] of OLD_SPEED_CURVE.entries()) {
+  const oldGain = oldSpeed - 340;
+  const newGain = speedForScore(score) - 340;
+  if (newGain + 0.001 < oldGain * 1.5) {
+    stats.invariantFailures.speedGainBelowFiftyPercent += 1;
+    console.log(`  FAIL score ${score}: new gain ${newGain} < required ${oldGain * 1.5}`);
+  }
+}
 
-const rateFailure = earlyDoubleRate < 5 || earlyDoubleRate > 8 ? 1 : 0;
+const rateFailure = earlyDoubleRate < 8 || earlyDoubleRate > 11 ? 1 : 0;
 const invariantFailureCount = Object.values(stats.invariantFailures).reduce((sum, count) => sum + count, 0) + rateFailure;
 
 if (stats.failures.length > 0 || invariantFailureCount > 0) {
@@ -182,4 +195,4 @@ if (stats.failures.length > 0 || invariantFailureCount > 0) {
   process.exit(1);
 }
 
-console.log(`\nPASS — zero impossible sequences and zero invariant violations across ${stats.candidates} candidates.`);
+console.log(`\nPASS — zero impossible sequences, and every post-tutorial speed anchor is at least 50% harder across ${stats.candidates} candidates.`);
