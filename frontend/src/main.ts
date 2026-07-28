@@ -5,6 +5,7 @@ import { MenuScene } from './game/scenes/MenuScene';
 import { GameScene } from './game/scenes/GameScene';
 import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
+import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
@@ -28,6 +29,9 @@ function boot() {
   // Add skill rewards, streaks, daily missions, and collectible paths without
   // changing the existing jump physics or obstacle validation.
   installFunGameplay(GameScene);
+  // Randomize ground-obstacle artwork from hurdle one and add fair airborne
+  // bird hazards. Installed after FunGameplay so birds are not reskinned.
+  installObstacleVariety(GameScene);
   // Add a clear X-eyes crash reaction to every selectable corgi skin.
   installBonkEyes(GameScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
