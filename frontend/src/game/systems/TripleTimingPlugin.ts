@@ -48,20 +48,25 @@ function buildSafeTriple(scene: any): HurdleCandidate | null {
   const tier = tierFor(score);
   const safeSpan = maximumSafeTripleSpan(gameSpeed) * 0.92;
 
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const heightBand = tier.heights.max - tier.heights.min;
-    const widthBand = tier.widths.max - tier.widths.min;
-    const heightMax = Math.max(
-      tier.heights.min,
-      Math.round(tier.heights.min + heightBand * 0.30),
-    );
-    const widthMax = Math.max(
-      tier.widths.min,
-      Math.round(tier.widths.min + widthBand * 0.28),
-    );
+  const heightBand = tier.heights.max - tier.heights.min;
+  const heightMax = Math.max(
+    tier.heights.min,
+    Math.round(tier.heights.min + heightBand * 0.30),
+  );
 
+  // Early triples need narrower individual pieces than normal singles. This is
+  // limited to triple groups and never goes below the global validated minimum.
+  const widthFloor = PHYSICS.minHurdleW;
+  const fairWidthCeiling = Math.floor((safeSpan - TRIPLE_EDGE_GAP * 2) / 3);
+  const tierWidthCeiling = Math.round(
+    tier.widths.min + (tier.widths.max - tier.widths.min) * 0.28,
+  );
+  const widthMax = Math.min(tierWidthCeiling, fairWidthCeiling);
+  if (widthMax < widthFloor) return null;
+
+  for (let attempt = 0; attempt < 8; attempt++) {
     const height = between(tier.heights.min, heightMax);
-    const width = between(tier.widths.min, widthMax);
+    const width = between(widthFloor, widthMax);
     const minimumClusterSpan = width * 3 + TRIPLE_EDGE_GAP * 2;
     if (minimumClusterSpan > safeSpan) continue;
 
