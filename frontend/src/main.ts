@@ -8,6 +8,8 @@ import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installBonkEyes } from './game/systems/BonkEyesPlugin';
+import { installPitObstacles } from './game/systems/PitObstaclePlugin';
+import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -38,6 +40,12 @@ function boot() {
   installHardSafeBalance(GameScene);
   // Add a clear X-eyes crash reaction to every selectable corgi skin.
   installBonkEyes(GameScene);
+  // Add holes only after all existing obstacle systems finish a group, so a
+  // hole can replace a validated single but never a bird/double/triple/character.
+  installPitObstacles(GameScene);
+  // Run after the scene wrappers above so damaged tree art, run-sheet bleed,
+  // and the continuous corgi trail are cleaned up after each scene is built.
+  installVisualPolish(GameScene, MenuScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
   // Safari and iOS WKWebView both suspend the audio context until then.
   sound.init();

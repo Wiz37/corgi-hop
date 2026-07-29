@@ -83,14 +83,15 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     if (opts.testId) this.setData('testId', opts.testId);
 
     bindForgivingTap(scene, this, () => this.onTapFn?.(), {
-      activationDelayMs: 55,
+      activateOnPointerDown: true,
+      activationDelayMs: 20,
       onPress: () => {
         this.drawBackground(true);
-        scene.tweens.add({ targets: this, scale: 0.94, duration: 60, ease: 'Sine.easeOut' });
+        scene.tweens.add({ targets: this, scale: 0.94, duration: 50, ease: 'Sine.easeOut' });
       },
       onRelease: () => {
         this.drawBackground(false);
-        scene.tweens.add({ targets: this, scale: 1, duration: 90, ease: 'Back.Out' });
+        scene.tweens.add({ targets: this, scale: 1, duration: 80, ease: 'Back.Out' });
       },
     });
   }
@@ -165,8 +166,10 @@ export class CircleIconButton extends Phaser.GameObjects.Container {
     if (opts.testId) this.setData('testId', opts.testId);
 
     bindForgivingTap(scene, this, () => this.onTapFn?.(), {
-      onPress: () => scene.tweens.add({ targets: this, scale: 0.9, duration: 60 }),
-      onRelease: () => scene.tweens.add({ targets: this, scale: 1, duration: 80, ease: 'Back.Out' }),
+      activateOnPointerDown: true,
+      activationDelayMs: 15,
+      onPress: () => scene.tweens.add({ targets: this, scale: 0.9, duration: 50 }),
+      onRelease: () => scene.tweens.add({ targets: this, scale: 1, duration: 75, ease: 'Back.Out' }),
     });
   }
 }
