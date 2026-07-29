@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
 
 export const TOUCH_CALIBRATION = {
-  // Keep horizontal padding at zero so side-by-side buttons never overlap or
-  // steal one another's touches. Extra vertical room still helps thumbs land.
+  // Do not widen buttons beyond their visible left/right edges: neighboring
+  // buttons must never steal each other's touches.
   horizontalPadding: 0,
-  verticalPadding: 24,
-  circularPadding: 26,
+  // A modest vertical margin improves thumb comfort without overlapping the
+  // PLAY button and the button row beneath it.
+  verticalPadding: 18,
+  // The visible circular controls are already large; a small halo keeps the
+  // HOW-TO and PRIVACY controls separate.
+  circularPadding: 5,
   movementTolerance: 110,
   maximumTapDurationMs: 1400,
   duplicateGuardMs: 260,
