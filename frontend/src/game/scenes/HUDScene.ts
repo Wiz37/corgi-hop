@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/main';
 import { gameState } from '@/game/systems/GameState';
 import { drawCompactTrophy, drawCompactBones, drawCircleControl } from '@/game/ui/PolishedHUD';
+import { bindForgivingTap } from '@/game/ui/TouchControls';
 import { sound } from '@/services/audio/SoundService';
 import { dailyMissions } from '@/game/systems/DailyMissions';
 import type { GameScene } from './GameScene';
@@ -29,11 +30,13 @@ export class HUDScene extends Phaser.Scene {
       shadow: { color: '#24304a', fill: true, blur: 4, offsetX: 0, offsetY: 6 },
     }).setOrigin(0.5).setDepth(50).setData('testId', 'hud-score-text');
 
-    const pause = drawCircleControl(this, GAME_WIDTH - 60, 62, 76, 'pause', 'hud-pause-button', 96);
-    pause.on('pointerdown', () => this.tweens.add({ targets: pause, scale: 0.92, duration: 60, yoyo: true }));
-    pause.on('pointerup', () => {
+    const pause = drawCircleControl(this, GAME_WIDTH - 60, 62, 76, 'pause', 'hud-pause-button', 140);
+    bindForgivingTap(this, pause, () => {
       this.scene.pause('GameScene');
       this.scene.launch('PauseScene');
+    }, {
+      onPress: () => this.tweens.add({ targets: pause, scale: 0.92, duration: 60 }),
+      onRelease: () => this.tweens.add({ targets: pause, scale: 1, duration: 80, ease: 'Back.Out' }),
     });
 
     const bones = drawCompactBones(this, GAME_WIDTH - 22, 120, gameState.treats, 'top-right');
@@ -72,10 +75,16 @@ export class HUDScene extends Phaser.Scene {
       .setDisplaySize(230, 230)
       .setAlpha(1)
       .setDepth(50)
-      .setInteractive({ useHandCursor: true });
-    paw.setData('testId', 'hud-jump-button');
+      .setData('testId', 'hud-jump-button-art');
     this.tweens.add({ targets: paw, scale: paw.scale * 1.04, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    paw.on('pointerdown', () => {
+
+    // The visible paw stays centered, but the calibrated tap zone covers most of
+    // the lower screen. Jumping fires on touch-down for immediate response.
+    const jumpHit = this.add.zone(GAME_WIDTH / 2, GAME_HEIGHT - 180, GAME_WIDTH - 70, 360)
+      .setDepth(51)
+      .setInteractive({ useHandCursor: true })
+      .setData('testId', 'hud-jump-button');
+    jumpHit.on('pointerdown', () => {
       this.tweens.add({ targets: paw, scale: paw.scale * 0.88, duration: 80, yoyo: true });
       if (typeof gameScene.tryJump === 'function') gameScene.tryJump();
     });
@@ -188,7 +197,7 @@ export class HUDScene extends Phaser.Scene {
     const icon = this.add.text(cx, cy, sound.isMuted ? '🔇' : '🔊', {
       fontFamily: 'system-ui, -apple-system, "Apple Color Emoji", "Segoe UI Emoji", sans-serif',
       fontSize: '36px',
-    }).setOrigin(0.5).setDepth(60).setData('testId', 'hud-mute-button');
+    }).setOrigin(0.5).setDepth(60).setData('testId', 'hud-mute-button-art');
 
     const paint = (muted: boolean) => {
       background.clear();
@@ -202,11 +211,15 @@ export class HUDScene extends Phaser.Scene {
     };
     paint(sound.isMuted);
 
-    const hit = this.add.zone(cx, cy, 76, 76).setDepth(61).setInteractive({ useHandCursor: true });
-    hit.on('pointerdown', () => {
-      this.tweens.add({ targets: icon, scale: 0.85, duration: 60, yoyo: true });
-      paint(sound.toggleMuted());
+    const hit = this.add.zone(cx, cy, 120, 120)
+      .setDepth(61)
+      .setInteractive({ useHandCursor: true })
+      .setData('testId', 'hud-mute-button');
+    bindForgivingTap(this, hit, () => paint(sound.toggleMuted()), {
+      onPress: () => this.tweens.add({ targets: icon, scale: 0.85, duration: 60 }),
+      onRelease: () => this.tweens.add({ targets: icon, scale: 1, duration: 80, ease: 'Back.Out' }),
     });
+
     const unsubscribe = sound.onMuteChanged(paint);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, unsubscribe);
   }
