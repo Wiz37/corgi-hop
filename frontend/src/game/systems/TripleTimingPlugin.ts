@@ -1,4 +1,5 @@
 import {
+  PHYSICS,
   jumpArc,
   tierFor,
   validate,
@@ -8,6 +9,9 @@ import {
 
 let installed = false;
 
+const TRIPLE_EDGE_GAP = 42;
+const TRIPLE_TIMING_MARGIN_MS = 90;
+
 const isDouble = (kind: PatternKind): boolean =>
   kind === 'double-mid' || kind === 'double-close' || kind === 'wide-double';
 
@@ -16,9 +20,9 @@ const between = (minimum: number, maximum: number): number =>
 
 function tripleChance(score: number): number {
   if (score < 50 || score > 100) return 0;
-  if (score <= 60) return 0.05;
-  if (score <= 74) return 0.06;
-  return 0.07;
+  if (score <= 60) return 0.08;
+  if (score <= 74) return 0.10;
+  return 0.12;
 }
 
 function canSpawnTriple(scene: any): boolean {
@@ -31,58 +35,76 @@ function canSpawnTriple(scene: any): boolean {
   return true;
 }
 
+function maximumSafeTripleSpan(gameSpeed: number): number {
+  const speed = Math.max(PHYSICS.baseSpeed, Number(gameSpeed) || PHYSICS.baseSpeed);
+  const oneJumpRange = jumpArc().horizontalRangeAtSpeed(speed);
+  const timingMarginPx = Math.max(36, speed * (TRIPLE_TIMING_MARGIN_MS / 1000));
+  return Math.max(0, oneJumpRange - PHYSICS.dogColliderW - timingMarginPx);
+}
+
 function buildSafeTriple(scene: any): HurdleCandidate | null {
   const score = Math.max(50, Number(scene.score) || 50);
-  const gameSpeed = Math.max(340, Number(scene.gameSpeed) || 340);
+  const gameSpeed = Math.max(PHYSICS.baseSpeed, Number(scene.gameSpeed) || PHYSICS.baseSpeed);
   const tier = tierFor(score);
-  const arc = jumpArc();
-  const oneJumpRange = arc.horizontalRangeAtSpeed(gameSpeed);
+  const safeSpan = maximumSafeTripleSpan(gameSpeed) * 0.92;
 
-  const heightBand = tier.heights.max - tier.heights.min;
-  const widthBand = tier.widths.max - tier.widths.min;
-  const heightMax = Math.max(
-    tier.heights.min,
-    Math.round(tier.heights.min + heightBand * 0.34),
-  );
-  const widthMax = Math.max(
-    tier.widths.min,
-    Math.round(tier.widths.min + widthBand * 0.34),
-  );
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const heightBand = tier.heights.max - tier.heights.min;
+    const widthBand = tier.widths.max - tier.widths.min;
+    const heightMax = Math.max(
+      tier.heights.min,
+      Math.round(tier.heights.min + heightBand * 0.30),
+    );
+    const widthMax = Math.max(
+      tier.widths.min,
+      Math.round(tier.widths.min + widthBand * 0.28),
+    );
 
-  const height = between(tier.heights.min, heightMax);
-  const width = between(tier.widths.min, widthMax);
-  const targetClusterSpan = oneJumpRange * between(73, 78) / 100;
-  const minimumCenterSpan = 2 * (width + 44);
-  const totalCenterSpan = Math.max(minimumCenterSpan, targetClusterSpan - width);
-  const firstGap = Math.round(totalCenterSpan * between(48, 52) / 100);
-  const secondGap = Math.round(totalCenterSpan - firstGap);
-  const baseX = 840;
+    const height = between(tier.heights.min, heightMax);
+    const width = between(tier.widths.min, widthMax);
+    const minimumClusterSpan = width * 3 + TRIPLE_EDGE_GAP * 2;
+    if (minimumClusterSpan > safeSpan) continue;
 
-  const fences = [
-    { x: baseX, height, width },
-    { x: baseX + firstGap, height, width },
-    { x: baseX + firstGap + secondGap, height, width },
-  ];
+    const targetClusterSpan = between(
+      Math.ceil(minimumClusterSpan),
+      Math.floor(Math.max(minimumClusterSpan, safeSpan)),
+    );
+    const totalCenterSpan = targetClusterSpan - width;
+    const firstGap = Math.round(totalCenterSpan * between(48, 52) / 100);
+    const secondGap = Math.round(totalCenterSpan - firstGap);
+    const baseX = 840;
 
-  const clusterSpan = totalCenterSpan + width;
-  const strideBuffer = 160;
-  const landingRunway = gameSpeed * 0.195;
-  const nextRunwayPx = oneJumpRange * 0.5 + strideBuffer + landingRunway + 210;
-  const corgiX = 720 * 0.28;
-  const reactionMs = ((baseX - width / 2 - corgiX) / gameSpeed) * 1000;
+    const fences = [
+      { x: baseX, height, width },
+      { x: baseX + firstGap, height, width },
+      { x: baseX + firstGap + secondGap, height, width },
+    ];
 
-  const candidate: HurdleCandidate = {
-    score,
-    gameSpeed,
-    tier,
-    kind: 'triple',
-    fences,
-    clusterSpan,
-    nextRunwayPx,
-    reactionMs,
-  };
+    const clusterSpan = targetClusterSpan;
+    const oneJumpRange = jumpArc().horizontalRangeAtSpeed(gameSpeed);
+    const strideBuffer = PHYSICS.dogColliderW + 40;
+    const landingRunway = gameSpeed * 0.195;
+    const nextRunwayPx = oneJumpRange * 0.5 + strideBuffer + landingRunway + 230;
+    const corgiX = 720 * 0.28;
+    const reactionMs = ((baseX - width / 2 - corgiX) / gameSpeed) * 1000;
 
-  return validate(candidate).ok ? candidate : null;
+    const candidate: HurdleCandidate = {
+      score,
+      gameSpeed,
+      tier,
+      kind: 'triple',
+      fences,
+      clusterSpan,
+      nextRunwayPx,
+      reactionMs,
+    };
+
+    if (validate(candidate).ok && clusterSpan <= maximumSafeTripleSpan(gameSpeed)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function spawnTriple(scene: any, candidate: HurdleCandidate): void {
@@ -101,13 +123,12 @@ function spawnTriple(scene: any, candidate: HurdleCandidate): void {
 
   // Kept local for TestFlight balancing; no user data is transmitted.
   // eslint-disable-next-line no-console
-  console.debug(`[hurdle] score=${candidate.score} injected safe triple`);
+  console.debug(`[hurdle] score=${candidate.score} injected one-jump-safe triple`);
 }
 
 /**
- * Adds rare, physics-validated triples from hurdle 50 through 100.
- * The authoritative generator continues to handle every other pattern,
- * including doubles beginning at hurdle 15 and its normal triples at 101+.
+ * Adds harder but strictly one-jump-safe triples from hurdle 50 through 100.
+ * Doubles still begin at hurdle 15 through the authoritative generator.
  */
 export function installTripleTiming(GameSceneClass: { prototype: object }): void {
   if (installed) return;
