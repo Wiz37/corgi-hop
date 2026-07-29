@@ -45,12 +45,18 @@ function makeRuntimeTriple(score, seed) {
   const tier = tierFor(score);
   const safeSpan = maximumSafeTripleSpan(gameSpeed) * 0.92;
   const heightBand = tier.heights.max - tier.heights.min;
-  const widthBand = tier.widths.max - tier.widths.min;
   const heightMax = Math.max(tier.heights.min, Math.round(tier.heights.min + heightBand * 0.30));
-  const widthMax = Math.max(tier.widths.min, Math.round(tier.widths.min + widthBand * 0.28));
+  const widthFloor = PHYSICS.minHurdleW;
+  const fairWidthCeiling = Math.floor((safeSpan - TRIPLE_EDGE_GAP * 2) / 3);
+  const tierWidthCeiling = Math.round(
+    tier.widths.min + (tier.widths.max - tier.widths.min) * 0.28,
+  );
+  const widthMax = Math.min(tierWidthCeiling, fairWidthCeiling);
+  if (widthMax < widthFloor) return null;
+
   const between = (min, max) => Math.floor(rng.next() * (max - min + 1)) + min;
   const height = between(tier.heights.min, heightMax);
-  const width = between(tier.widths.min, widthMax);
+  const width = between(widthFloor, widthMax);
   const minimumClusterSpan = width * 3 + TRIPLE_EDGE_GAP * 2;
   if (minimumClusterSpan > safeSpan) return null;
 
@@ -88,6 +94,7 @@ function makeRuntimeTriple(score, seed) {
 }
 
 let runtimeTriples = 0;
+let score50Triples = 0;
 let score82Triples = 0;
 let generatorCandidates = 0;
 let runtimeDowngrades = 0;
@@ -98,6 +105,7 @@ for (let score = 50; score <= 100; score++) {
     const candidate = makeRuntimeTriple(score, score * 100000 + sample);
     if (!candidate) continue;
     runtimeTriples += 1;
+    if (score === 50) score50Triples += 1;
     if (score === 82) score82Triples += 1;
 
     const validation = validate(candidate);
@@ -148,7 +156,10 @@ for (let sequence = 0; sequence < 25000 && failures.length === 0; sequence++) {
   }
 }
 
-if (score82Triples < 500) {
+if (score50Triples < 1000) {
+  failures.push({ type: 'coverage', reasons: [`only ${score50Triples} score-50 triples generated`] });
+}
+if (score82Triples < 1000) {
   failures.push({ type: 'coverage', reasons: [`only ${score82Triples} score-82 triples generated`] });
 }
 
@@ -160,6 +171,7 @@ if (failures.length) {
 
 console.log('\nPASS — never-impossible obstacle safety audit');
 console.log(`Runtime triples tested: ${runtimeTriples}`);
+console.log(`Score-50 triples tested: ${score50Triples}`);
 console.log(`Score-82 triples tested: ${score82Triples}`);
 console.log(`Generator candidates tested: ${generatorCandidates}`);
 console.log(`Unsafe native triples safely downgraded by runtime gate: ${runtimeDowngrades}`);
