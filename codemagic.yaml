@@ -61,6 +61,19 @@ workflows:
           cd "$CM_BUILD_DIR/frontend"
           npx tsc --noEmit
 
+      - name: Validate never-impossible obstacles
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/frontend"
+          rm -rf /tmp/corgi-hop-validator
+          npx tsc src/game/systems/HurdleGenerator.ts \
+            --target ES2020 \
+            --module commonjs \
+            --outDir /tmp/corgi-hop-validator \
+            --skipLibCheck
+          node scripts/validate_never_impossible.cjs \
+            /tmp/corgi-hop-validator/HurdleGenerator.js
+
       - name: Create production environment file
         script: |
           set -euo pipefail
