@@ -1,20 +1,26 @@
 import Phaser from 'phaser';
 import type { PatternKind } from './HurdleGenerator';
+import {
+  buildCharacterObstacleTextures,
+  type CharacterObstacleSkin,
+} from './ObstacleCharacterArt';
 
 type GroundSkin =
   | 'picket_fence'
   | 'obstacle_log'
   | 'obstacle_hay'
   | 'obstacle_tires'
-  | 'obstacle_cones';
+  | 'obstacle_cones'
+  | CharacterObstacleSkin;
 
 interface VarietyState {
   birdCooldown: number;
+  characterCooldown: number;
   nextAirGroupId: number;
   lastGroundSkin: GroundSkin | null;
 }
 
-const GROUND_SKINS: GroundSkin[] = [
+const BASE_GROUND_SKINS: GroundSkin[] = [
   'picket_fence',
   'obstacle_log',
   'obstacle_hay',
@@ -22,16 +28,31 @@ const GROUND_SKINS: GroundSkin[] = [
   'obstacle_cones',
 ];
 
+const CHARACTER_SKINS = new Set<GroundSkin>([
+  'obstacle_boy',
+  'obstacle_girl',
+  'obstacle_mean_dog',
+]);
+
 const states = new WeakMap<object, VarietyState>();
 let installed = false;
 
 const isDouble = (kind: PatternKind): boolean =>
   kind === 'double-mid' || kind === 'double-close' || kind === 'wide-double';
 
+function emptyState(): VarietyState {
+  return {
+    birdCooldown: 0,
+    characterCooldown: 0,
+    nextAirGroupId: 0,
+    lastGroundSkin: null,
+  };
+}
+
 function stateFor(scene: object): VarietyState {
   let state = states.get(scene);
   if (!state) {
-    state = { birdCooldown: 0, nextAirGroupId: 0, lastGroundSkin: null };
+    state = emptyState();
     states.set(scene, state);
   }
   return state;
@@ -71,24 +92,76 @@ function buildBirdTexture(scene: any): void {
   graphics.destroy();
 }
 
-function pickGroundSkin(scene: any, state: VarietyState, used: Set<GroundSkin>): GroundSkin {
-  const available = GROUND_SKINS.filter((skin) =>
+function weightedGroundPool(score: number, isMulti: boolean): GroundSkin[] {
+  // Existing obstacle types retain the majority of the rotation.
+  const pool: GroundSkin[] = [
+    ...BASE_GROUND_SKINS,
+    ...BASE_GROUND_SKINS,
+  ];
+
+  // Mean dog begins first, followed by the boy and girl. Singles show the new
+  // characters more often; doubles and triples keep them rarer for readability.
+  if (score >= 8) {
+    pool.push('obstacle_mean_dog');
+    if (!isMulti) pool.push('obstacle_mean_dog');
+  }
+  if (score >= 10) {
+    pool.push('obstacle_boy', 'obstacle_girl');
+    if (!isMulti) pool.push('obstacle_boy', 'obstacle_girl');
+  }
+
+  return pool;
+}
+
+function pickGroundSkin(
+  scene: any,
+  state: VarietyState,
+  used: Set<GroundSkin>,
+  score: number,
+  isMulti: boolean,
+  characterAlreadyUsed: boolean,
+): GroundSkin {
+  const pool = weightedGroundPool(score, isMulti);
+  const allowed = (skin: GroundSkin): boolean =>
+    scene.textures.exists(skin)
+    && !used.has(skin)
+    && skin !== state.lastGroundSkin
+    && (!characterAlreadyUsed || !CHARACTER_SKINS.has(skin))
+    && (state.characterCooldown === 0 || !CHARACTER_SKINS.has(skin));
+
+  const available = pool.filter(allowed);
+  const fallback = BASE_GROUND_SKINS.filter((skin) =>
     scene.textures.exists(skin) && !used.has(skin) && skin !== state.lastGroundSkin,
   );
-  const fallback = GROUND_SKINS.filter((skin) => scene.textures.exists(skin) && !used.has(skin));
-  const choices = available.length ? available : fallback.length ? fallback : ['picket_fence' as GroundSkin];
-  return choices[Math.floor(Math.random() * choices.length)];
+  const anyBase = BASE_GROUND_SKINS.filter((skin) => scene.textures.exists(skin));
+  const choices = available.length ? available : fallback.length ? fallback : anyBase;
+
+  return choices.length
+    ? choices[Math.floor(Math.random() * choices.length)]
+    : 'picket_fence';
 }
 
 function randomizeGroundGroup(scene: any, spawned: any[], state: VarietyState): void {
   if (!spawned.length) return;
+
+  const score = Math.max(0, Number(scene.score) || 0);
+  const isMulti = spawned.length > 1;
   const used = new Set<GroundSkin>();
+  let characterUsed = false;
 
   for (const obstacle of spawned) {
     if (!obstacle?.active || obstacle.getData?.('airHazard')) continue;
+
     const width = Number(obstacle.displayWidth) || 90;
     const height = Number(obstacle.displayHeight) || 90;
-    const skin = pickGroundSkin(scene, state, used);
+    const skin = pickGroundSkin(
+      scene,
+      state,
+      used,
+      score,
+      isMulti,
+      characterUsed,
+    );
     used.add(skin);
 
     obstacle.setTexture(skin);
@@ -96,16 +169,25 @@ function randomizeGroundGroup(scene: any, spawned: any[], state: VarietyState): 
     obstacle.setAlpha(1);
     obstacle.clearTint?.();
     obstacle.setData('funObstacleSkin', skin);
+    obstacle.setData('characterObstacle', CHARACTER_SKINS.has(skin));
+
+    if (CHARACTER_SKINS.has(skin)) characterUsed = true;
     state.lastGroundSkin = skin;
   }
+
+  // Never place character obstacles in consecutive ground groups, and never
+  // place more than one boy/girl/dog inside the same double or triple group.
+  state.characterCooldown = characterUsed
+    ? 1
+    : Math.max(0, state.characterCooldown - 1);
 }
 
 function birdChanceForScore(score: number): number {
   if (score < 5) return 0;
-  if (score < 15) return 0.06;
-  if (score < 30) return 0.09;
-  if (score < 60) return 0.12;
-  return 0.15;
+  if (score < 15) return 0.07;
+  if (score < 30) return 0.10;
+  if (score < 60) return 0.13;
+  return 0.16;
 }
 
 function canSpawnBird(scene: any, state: VarietyState): boolean {
@@ -192,6 +274,7 @@ function spawnBird(scene: any, state: VarietyState): void {
   const speed = Math.max(340, Number(scene.gameSpeed) || 340);
   scene.lastSpawnX = 720 + Math.max(980, speed * 1.5);
   state.birdCooldown = 2;
+  state.characterCooldown = Math.max(0, state.characterCooldown - 1);
 }
 
 /**
@@ -211,7 +294,8 @@ export function installObstacleVariety(GameSceneClass: { prototype: object }): v
   proto.create = function (...args: unknown[]) {
     const result = originalCreate.apply(this, args);
     buildBirdTexture(this);
-    states.set(this, { birdCooldown: 0, nextAirGroupId: 0, lastGroundSkin: null });
+    buildCharacterObstacleTextures(this);
+    states.set(this, emptyState());
     return result;
   };
 
