@@ -1,0 +1,4 @@
+Codemagic rebuild trigger.
+
+Requested after App Store Connect Build 14 remained stuck without an updated TestFlight status.
+Game code is unchanged.
