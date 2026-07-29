@@ -23,6 +23,7 @@ const HARDER_GAIN_MULTIPLIER = 1.10;
 const HARD_SPEED_CAP = 770;
 const TRIPLE_EDGE_GAP = 42;
 const TRIPLE_TIMING_MARGIN_MS = 90;
+const SAMPLES_PER_SCORE = 1200;
 
 function harderSpeed(score) {
   const base = speedForScore(score);
@@ -54,24 +55,29 @@ function makeRuntimeTriple(score, seed) {
   const widthMax = Math.min(tierWidthCeiling, fairWidthCeiling);
   if (widthMax < widthFloor) return null;
 
-  const between = (min, max) => Math.floor(rng.next() * (max - min + 1)) + min;
-  const height = between(tier.heights.min, heightMax);
-  const width = between(widthFloor, widthMax);
+  const height = rng.between(tier.heights.min, heightMax);
+  const width = rng.between(widthFloor, widthMax);
   const minimumClusterSpan = width * 3 + TRIPLE_EDGE_GAP * 2;
   if (minimumClusterSpan > safeSpan) return null;
 
-  const targetClusterSpan = between(
+  const targetClusterSpan = rng.between(
     Math.ceil(minimumClusterSpan),
     Math.floor(Math.max(minimumClusterSpan, safeSpan)),
   );
-  const totalCenterSpan = targetClusterSpan - width;
-  const firstGap = Math.round(totalCenterSpan * between(48, 52) / 100);
-  const secondGap = Math.round(totalCenterSpan - firstGap);
+
+  // Mirror the live generator exactly: distribute only the extra space so both
+  // adjacent obstacle pairs retain at least a 42px clear edge gap.
+  const extraGapSpace = targetClusterSpan - minimumClusterSpan;
+  const firstExtra = extraGapSpace > 0 ? rng.between(0, extraGapSpace) : 0;
+  const firstEdgeGap = TRIPLE_EDGE_GAP + firstExtra;
+  const secondEdgeGap = TRIPLE_EDGE_GAP + (extraGapSpace - firstExtra);
+  const firstCenterGap = width + firstEdgeGap;
+  const secondCenterGap = width + secondEdgeGap;
   const baseX = 840;
   const fences = [
     { x: baseX, height, width },
-    { x: baseX + firstGap, height, width },
-    { x: baseX + firstGap + secondGap, height, width },
+    { x: baseX + firstCenterGap, height, width },
+    { x: baseX + firstCenterGap + secondCenterGap, height, width },
   ];
   const oneJumpRange = jumpArc().horizontalRangeAtSpeed(gameSpeed);
   const nextRunwayPx = oneJumpRange * 0.5
@@ -93,28 +99,50 @@ function makeRuntimeTriple(score, seed) {
   };
 }
 
+function edgeGapsFor(candidate) {
+  const gaps = [];
+  for (let index = 1; index < candidate.fences.length; index++) {
+    const previous = candidate.fences[index - 1];
+    const current = candidate.fences[index];
+    gaps.push((current.x - current.width / 2) - (previous.x + previous.width / 2));
+  }
+  return gaps;
+}
+
 let runtimeTriples = 0;
 let score50Triples = 0;
 let score82Triples = 0;
 let generatorCandidates = 0;
 let runtimeDowngrades = 0;
+let minimumObservedEdgeGap = Infinity;
 const failures = [];
 
 for (let score = 50; score <= 100; score++) {
-  for (let sample = 0; sample < 1200; sample++) {
+  for (let sample = 0; sample < SAMPLES_PER_SCORE; sample++) {
     const candidate = makeRuntimeTriple(score, score * 100000 + sample);
-    if (!candidate) continue;
+    if (!candidate) {
+      failures.push({ type: 'runtime-triple-null', score, sample });
+      break;
+    }
+
     runtimeTriples += 1;
     if (score === 50) score50Triples += 1;
     if (score === 82) score82Triples += 1;
 
     const validation = validate(candidate);
     const fullBodySafe = candidate.clusterSpan <= maximumSafeTripleSpan(candidate.gameSpeed);
-    if (!validation.ok || !fullBodySafe) {
+    const edgeGaps = edgeGapsFor(candidate);
+    const pairSpacingSafe = edgeGaps.every((gap) => gap + 0.001 >= TRIPLE_EDGE_GAP);
+    minimumObservedEdgeGap = Math.min(minimumObservedEdgeGap, ...edgeGaps);
+
+    if (!validation.ok || !fullBodySafe || !pairSpacingSafe) {
       failures.push({
         type: 'runtime-triple',
         score,
+        sample,
         reasons: validation.reasons,
+        edgeGaps,
+        requiredEdgeGap: TRIPLE_EDGE_GAP,
         span: candidate.clusterSpan,
         max: maximumSafeTripleSpan(candidate.gameSpeed),
       });
@@ -156,11 +184,17 @@ for (let sequence = 0; sequence < 25000 && failures.length === 0; sequence++) {
   }
 }
 
-if (score50Triples < 1000) {
-  failures.push({ type: 'coverage', reasons: [`only ${score50Triples} score-50 triples generated`] });
+if (score50Triples !== SAMPLES_PER_SCORE) {
+  failures.push({
+    type: 'coverage',
+    reasons: [`expected ${SAMPLES_PER_SCORE} score-50 triples, generated ${score50Triples}`],
+  });
 }
-if (score82Triples < 1000) {
-  failures.push({ type: 'coverage', reasons: [`only ${score82Triples} score-82 triples generated`] });
+if (score82Triples !== SAMPLES_PER_SCORE) {
+  failures.push({
+    type: 'coverage',
+    reasons: [`expected ${SAMPLES_PER_SCORE} score-82 triples, generated ${score82Triples}`],
+  });
 }
 
 if (failures.length) {
@@ -173,6 +207,7 @@ console.log('\nPASS — never-impossible obstacle safety audit');
 console.log(`Runtime triples tested: ${runtimeTriples}`);
 console.log(`Score-50 triples tested: ${score50Triples}`);
 console.log(`Score-82 triples tested: ${score82Triples}`);
+console.log(`Minimum observed triple edge gap: ${minimumObservedEdgeGap.toFixed(1)}px`);
 console.log(`Generator candidates tested: ${generatorCandidates}`);
 console.log(`Unsafe native triples safely downgraded by runtime gate: ${runtimeDowngrades}`);
 console.log(`Harder speed at score 82: ${harderSpeed(82).toFixed(1)} px/s`);
