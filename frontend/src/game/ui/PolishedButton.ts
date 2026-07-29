@@ -11,6 +11,11 @@
 //   });
 
 import Phaser from 'phaser';
+import {
+  bindForgivingTap,
+  expandedCircle,
+  expandedRectangle,
+} from './TouchControls';
 
 export interface PolishedButtonOptions {
   x: number;
@@ -18,12 +23,12 @@ export interface PolishedButtonOptions {
   w: number;
   h: number;
   label: string;
-  color?: number;         // main fill (default warm orange)
-  shadowColor?: number;   // 3D underlay color
-  strokeColor?: number;   // outer stroke color
+  color?: number;
+  shadowColor?: number;
+  strokeColor?: number;
   textColor?: string;
   fontSize?: number;
-  iconTexture?: string;   // optional Phaser texture key rendered on the left
+  iconTexture?: string;
   iconScale?: number;
   testId?: string;
   depth?: number;
@@ -74,40 +79,21 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     this.add(this.text);
 
     this.setSize(opts.w, opts.h);
-    this.setInteractive(
-  new Phaser.Geom.Rectangle(
-    -opts.w / 2 - 24,
-    -opts.h / 2 - 24,
-    opts.w + 48,
-    opts.h + 48,
-  ),
-  Phaser.Geom.Rectangle.Contains,
-);
+    this.setInteractive(expandedRectangle(opts.w, opts.h), Phaser.Geom.Rectangle.Contains);
     if (opts.testId) this.setData('testId', opts.testId);
 
-    this.on('pointerdown', this.onDown, this);
-    this.on('pointerup', this.onUp, this);
-    this.on('pointerout', this.onOut, this);
+    bindForgivingTap(scene, this, () => this.onTapFn?.(), {
+      activationDelayMs: 55,
+      onPress: () => {
+        this.drawBackground(true);
+        scene.tweens.add({ targets: this, scale: 0.94, duration: 60, ease: 'Sine.easeOut' });
+      },
+      onRelease: () => {
+        this.drawBackground(false);
+        scene.tweens.add({ targets: this, scale: 1, duration: 90, ease: 'Back.Out' });
+      },
+    });
   }
-
-  private onDown = (): void => {
-    this.drawBackground(true);
-    this.scene.tweens.add({ targets: this, scale: 0.94, duration: 60, ease: 'Sine.easeOut' });
-  };
-
-  private onUp = (): void => {
-    this.drawBackground(false);
-    this.scene.tweens.add({ targets: this, scale: 1, duration: 90, ease: 'Back.Out' });
-    if (this.onTapFn) {
-      // Small delay so the bounce plays before scene changes.
-      this.scene.time.delayedCall(60, () => this.onTapFn?.());
-    }
-  };
-
-  private onOut = (): void => {
-    this.drawBackground(false);
-    this.scene.tweens.add({ targets: this, scale: 1, duration: 90, ease: 'Back.Out' });
-  };
 
   private drawBackground(pressed: boolean): void {
     const { w, h, color, shadowColor, strokeColor } = this.opts;
@@ -117,19 +103,15 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     const radius = h / 2;
     const shadowOffset = pressed ? 4 : 10;
 
-    // 3D underlay — a slightly-darker rounded rect offset down
     g.fillStyle(shadowColor, 1);
     g.fillRoundedRect(-w / 2, -h / 2 + shadowOffset, w, h, radius);
 
-    // Main fill
     g.fillStyle(color, 1);
     g.fillRoundedRect(-w / 2, -h / 2, w, h - (pressed ? 4 : 0), radius);
 
-    // Top highlight strip (gloss)
     g.fillStyle(0xffffff, 0.35);
     g.fillRoundedRect(-w / 2 + 10, -h / 2 + 6, w - 20, h * 0.32, radius);
 
-    // Outer stroke
     g.lineStyle(6, strokeColor, 1);
     g.strokeRoundedRect(-w / 2, -h / 2, w, h, radius);
   }
@@ -140,7 +122,7 @@ export interface CircleIconButtonOptions {
   x: number;
   y: number;
   size: number;
-  label: string;      // 1-2 char label, e.g. '?', 'ⓘ', 'P'
+  label: string;
   color?: number;
   strokeColor?: number;
   testId?: string;
@@ -160,16 +142,12 @@ export class CircleIconButton extends Phaser.GameObjects.Container {
     const color = opts.color ?? 0xffffff;
     const strokeColor = opts.strokeColor ?? 0x24304a;
     this.graphics = scene.add.graphics();
-    // 3D underlay
     this.graphics.fillStyle(0x24304a, 0.45);
     this.graphics.fillCircle(3, 5, opts.size / 2);
-    // Main
     this.graphics.fillStyle(color, 1);
     this.graphics.fillCircle(0, 0, opts.size / 2);
-    // Highlight
     this.graphics.fillStyle(0xffffff, 0.35);
     this.graphics.fillCircle(-opts.size / 8, -opts.size / 6, opts.size / 3.5);
-    // Stroke
     this.graphics.lineStyle(5, strokeColor, 1);
     this.graphics.strokeCircle(0, 0, opts.size / 2);
     this.add(this.graphics);
@@ -183,13 +161,12 @@ export class CircleIconButton extends Phaser.GameObjects.Container {
     this.add(t);
 
     this.setSize(opts.size, opts.size);
-    this.setInteractive(
-  new Phaser.Geom.Circle(0, 0, opts.size / 2 + 16),
-  Phaser.Geom.Circle.Contains,
-);
+    this.setInteractive(expandedCircle(opts.size), Phaser.Geom.Circle.Contains);
     if (opts.testId) this.setData('testId', opts.testId);
 
-    this.on('pointerdown', () => scene.tweens.add({ targets: this, scale: 0.9, duration: 60, yoyo: true }));
-    this.on('pointerup', () => this.onTapFn?.());
+    bindForgivingTap(scene, this, () => this.onTapFn?.(), {
+      onPress: () => scene.tweens.add({ targets: this, scale: 0.9, duration: 60 }),
+      onRelease: () => scene.tweens.add({ targets: this, scale: 1, duration: 80, ease: 'Back.Out' }),
+    });
   }
 }
