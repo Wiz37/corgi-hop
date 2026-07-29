@@ -74,15 +74,21 @@ function buildSafeTriple(scene: any): HurdleCandidate | null {
       Math.ceil(minimumClusterSpan),
       Math.floor(Math.max(minimumClusterSpan, safeSpan)),
     );
-    const totalCenterSpan = targetClusterSpan - width;
-    const firstGap = Math.round(totalCenterSpan * between(48, 52) / 100);
-    const secondGap = Math.round(totalCenterSpan - firstGap);
+
+    // Split only the EXTRA space. Both pairs always retain the full 42px clear
+    // edge gap, so rounding can never squeeze one pair below the safe minimum.
+    const extraGapSpace = targetClusterSpan - minimumClusterSpan;
+    const firstExtra = extraGapSpace > 0 ? between(0, extraGapSpace) : 0;
+    const firstEdgeGap = TRIPLE_EDGE_GAP + firstExtra;
+    const secondEdgeGap = TRIPLE_EDGE_GAP + (extraGapSpace - firstExtra);
+    const firstCenterGap = width + firstEdgeGap;
+    const secondCenterGap = width + secondEdgeGap;
     const baseX = 840;
 
     const fences = [
       { x: baseX, height, width },
-      { x: baseX + firstGap, height, width },
-      { x: baseX + firstGap + secondGap, height, width },
+      { x: baseX + firstCenterGap, height, width },
+      { x: baseX + firstCenterGap + secondCenterGap, height, width },
     ];
 
     const clusterSpan = targetClusterSpan;
