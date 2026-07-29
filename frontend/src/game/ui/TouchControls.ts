@@ -1,12 +1,14 @@
 import Phaser from 'phaser';
 
 export const TOUCH_CALIBRATION = {
-  horizontalPadding: 18,
-  verticalPadding: 44,
-  circularPadding: 16,
-  movementTolerance: 90,
-  maximumTapDurationMs: 1200,
-  duplicateGuardMs: 220,
+  // Keep horizontal padding at zero so side-by-side buttons never overlap or
+  // steal one another's touches. Extra vertical room still helps thumbs land.
+  horizontalPadding: 0,
+  verticalPadding: 24,
+  circularPadding: 26,
+  movementTolerance: 110,
+  maximumTapDurationMs: 1400,
+  duplicateGuardMs: 260,
 } as const;
 
 export function expandedRectangle(
@@ -34,14 +36,15 @@ interface ForgivingTapOptions {
   movementTolerance?: number;
   maximumTapDurationMs?: number;
   activationDelayMs?: number;
+  activateOnPointerDown?: boolean;
   onPress?: () => void;
   onRelease?: () => void;
 }
 
 /**
- * Keeps a tap armed when a finger drifts slightly outside the visible button.
- * This fixes the common mobile failure where pointerout cancels pointerup after
- * only a few pixels of natural thumb movement.
+ * Mobile-first tap binding. Buttons can activate on pointer-down so they feel
+ * immediate and do not require a perfectly aligned release. Pointer-up mode is
+ * still available for controls that need drag rejection before activation.
  */
 export function bindForgivingTap(
   scene: Phaser.Scene,
@@ -53,6 +56,7 @@ export function bindForgivingTap(
   const maximumTapDurationMs = options.maximumTapDurationMs
     ?? TOUCH_CALIBRATION.maximumTapDurationMs;
   const activationDelayMs = options.activationDelayMs ?? 0;
+  const activateOnPointerDown = options.activateOnPointerDown ?? true;
 
   let activePointerId: number | null = null;
   let downX = 0;
@@ -62,6 +66,14 @@ export function bindForgivingTap(
 
   const releaseVisual = (): void => options.onRelease?.();
 
+  const activate = (): void => {
+    const now = scene.time.now;
+    if (now - lastActivatedAt < TOUCH_CALIBRATION.duplicateGuardMs) return;
+    lastActivatedAt = now;
+    if (activationDelayMs > 0) scene.time.delayedCall(activationDelayMs, onTap);
+    else onTap();
+  };
+
   target.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
     if (activePointerId !== null) return;
     activePointerId = pointer.id;
@@ -69,6 +81,7 @@ export function bindForgivingTap(
     downY = pointer.y;
     downAt = scene.time.now;
     options.onPress?.();
+    if (activateOnPointerDown) activate();
   });
 
   const finish = (pointer: Phaser.Input.Pointer): void => {
@@ -76,23 +89,18 @@ export function bindForgivingTap(
 
     activePointerId = null;
     releaseVisual();
+    if (activateOnPointerDown) return;
 
     const distance = Phaser.Math.Distance.Between(downX, downY, pointer.x, pointer.y);
     const duration = Math.max(0, scene.time.now - downAt);
-    const now = scene.time.now;
-
     if (distance > movementTolerance || duration > maximumTapDurationMs) return;
-    if (now - lastActivatedAt < TOUCH_CALIBRATION.duplicateGuardMs) return;
-    lastActivatedAt = now;
-
-    if (activationDelayMs > 0) scene.time.delayedCall(activationDelayMs, onTap);
-    else onTap();
+    activate();
   };
 
   target.on('pointerup', finish);
   target.on('pointerupoutside', finish);
 
-  // Reset the visual when the finger drifts away, but keep the tap armed. A
-  // nearby release is still accepted by pointerupoutside.
+  // Reset the visual when a finger drifts away. The press is kept armed until
+  // release, but pointer-down activation has already made the control respond.
   target.on('pointerout', releaseVisual);
 }
