@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 
 export const TOUCH_CALIBRATION = {
-  rectangularPadding: 52,
-  circularPadding: 30,
+  horizontalPadding: 18,
+  verticalPadding: 44,
+  circularPadding: 16,
   movementTolerance: 90,
   maximumTapDurationMs: 1200,
   duplicateGuardMs: 220,
@@ -11,13 +12,14 @@ export const TOUCH_CALIBRATION = {
 export function expandedRectangle(
   width: number,
   height: number,
-  padding = TOUCH_CALIBRATION.rectangularPadding,
+  horizontalPadding = TOUCH_CALIBRATION.horizontalPadding,
+  verticalPadding = TOUCH_CALIBRATION.verticalPadding,
 ): Phaser.Geom.Rectangle {
   return new Phaser.Geom.Rectangle(
-    -width / 2 - padding,
-    -height / 2 - padding,
-    width + padding * 2,
-    height + padding * 2,
+    -width / 2 - horizontalPadding,
+    -height / 2 - verticalPadding,
+    width + horizontalPadding * 2,
+    height + verticalPadding * 2,
   );
 }
 
