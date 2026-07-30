@@ -1,20 +1,10 @@
 // PolishedButton — a Phaser button drawn entirely with Graphics + Text,
-// so we get consistent, "premium mobile game" styling (deep shadow underlay,
-// bright top gradient, thick dark navy stroke, bold white text with stroke).
-//
-// Usage:
-//   const btn = new PolishedButton(this, {
-//     x: 360, y: 700, w: 420, h: 118,
-//     label: 'PLAY', color: 0xffb02f, testId: 'menu-play-button',
-//     iconTexture: 'ui_paw_button',
-//     onTap: () => this.scene.start('GameScene'),
-//   });
+// so we get consistent, premium mobile-game styling.
 
 import Phaser from 'phaser';
 import {
   bindForgivingTap,
   expandedCircle,
-  expandedRectangle,
 } from './TouchControls';
 
 export interface PolishedButtonOptions {
@@ -39,6 +29,7 @@ export class PolishedButton extends Phaser.GameObjects.Container {
   private readonly onTapFn?: () => void;
   private readonly graphics: Phaser.GameObjects.Graphics;
   private readonly text: Phaser.GameObjects.Text;
+  private readonly touchZone: Phaser.GameObjects.Zone;
   private readonly opts: Required<Omit<PolishedButtonOptions, 'iconTexture' | 'onTap' | 'testId' | 'iconScale' | 'depth'>> & PolishedButtonOptions;
 
   constructor(scene: Phaser.Scene, opts: PolishedButtonOptions) {
@@ -62,18 +53,7 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     this.drawBackground(false);
 
     const hasIcon = !!(opts.iconTexture && scene.textures.exists(opts.iconTexture));
-    if (hasIcon && opts.iconTexture) {
-      // Keep the icon and label centered as one visual group. The old -32% icon
-      // offset left a large empty area on the right and made PLAY feel left-heavy.
-      const iconX = -Math.min(opts.w * 0.18, opts.h * 0.68);
-      const icon = scene.add.image(iconX, 0, opts.iconTexture);
-      const iconSize = opts.h * 0.68 * (opts.iconScale ?? 1);
-      icon.setDisplaySize(iconSize, iconSize);
-      this.add(icon);
-    }
-
-    const labelX = hasIcon ? Math.min(opts.w * 0.09, opts.h * 0.32) : 0;
-    this.text = scene.add.text(labelX, -2, opts.label, {
+    this.text = scene.add.text(0, -2, opts.label, {
       fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
       fontSize: `${this.opts.fontSize}px`,
       fontStyle: '900',
@@ -83,30 +63,53 @@ export class PolishedButton extends Phaser.GameObjects.Container {
       align: 'center',
     }).setOrigin(0.5);
 
-    // Use more of the button face while guaranteeing that long labels still fit.
-    const maxLabelWidth = hasIcon ? opts.w * 0.60 : opts.w - 28;
+    const iconSize = hasIcon ? opts.h * 0.58 * (opts.iconScale ?? 1) : 0;
+    const gap = hasIcon ? Math.max(12, Math.round(opts.h * 0.10)) : 0;
+    const maxLabelWidth = hasIcon
+      ? Math.max(80, opts.w - iconSize - gap - 42)
+      : opts.w - 28;
     if (this.text.width > maxLabelWidth) {
-      const fitScale = maxLabelWidth / this.text.width;
-      this.text.setScale(fitScale);
+      this.text.setScale(maxLabelWidth / this.text.width);
+    }
+
+    if (hasIcon && opts.iconTexture) {
+      const labelWidth = this.text.displayWidth;
+      const groupWidth = iconSize + gap + labelWidth;
+      const groupLeft = -groupWidth / 2;
+      const icon = scene.add.image(groupLeft + iconSize / 2, 0, opts.iconTexture);
+      icon.setDisplaySize(iconSize, iconSize);
+      this.text.setX(groupLeft + iconSize + gap + labelWidth / 2);
+      this.add(icon);
+    } else {
+      this.text.setX(0);
     }
     this.add(this.text);
 
     this.setSize(opts.w, opts.h);
-    this.setInteractive(expandedRectangle(opts.w, opts.h), Phaser.Geom.Rectangle.Contains);
     if (opts.testId) this.setData('testId', opts.testId);
 
-    bindForgivingTap(scene, this, () => this.onTapFn?.(), {
+    // Use a separate scene-level zone at the exact visual coordinates. This
+    // avoids Container-local coordinate offsets that made iPhone taps register
+    // to the left of the drawn button.
+    this.touchZone = scene.add.zone(opts.x, opts.y, opts.w, opts.h + 24)
+      .setDepth((this.opts.depth ?? 30) + 1)
+      .setInteractive({ useHandCursor: true });
+    if (opts.testId) this.touchZone.setData('testId', `${opts.testId}-touch-zone`);
+
+    bindForgivingTap(scene, this.touchZone, () => this.onTapFn?.(), {
       activateOnPointerDown: true,
-      activationDelayMs: 20,
+      activationDelayMs: 15,
       onPress: () => {
         this.drawBackground(true);
-        scene.tweens.add({ targets: this, scale: 0.94, duration: 50, ease: 'Sine.easeOut' });
+        scene.tweens.add({ targets: this, scale: 0.96, duration: 45, ease: 'Sine.easeOut' });
       },
       onRelease: () => {
         this.drawBackground(false);
-        scene.tweens.add({ targets: this, scale: 1, duration: 80, ease: 'Back.Out' });
+        scene.tweens.add({ targets: this, scale: 1, duration: 75, ease: 'Back.Out' });
       },
     });
+
+    this.once(Phaser.GameObjects.Events.DESTROY, () => this.touchZone.destroy());
   }
 
   private drawBackground(pressed: boolean): void {
@@ -123,8 +126,15 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     g.fillStyle(color, 1);
     g.fillRoundedRect(-w / 2, -h / 2, w, h - (pressed ? 4 : 0), radius);
 
-    g.fillStyle(0xffffff, 0.35);
-    g.fillRoundedRect(-w / 2 + 10, -h / 2 + 6, w - 20, h * 0.32, radius);
+    // Keep the white gloss inset evenly so its outline follows the button.
+    g.fillStyle(0xffffff, 0.26);
+    g.fillRoundedRect(
+      -w / 2 + 12,
+      -h / 2 + 8,
+      w - 24,
+      Math.max(18, h * 0.24),
+      Math.max(12, radius - 8),
+    );
 
     g.lineStyle(6, strokeColor, 1);
     g.strokeRoundedRect(-w / 2, -h / 2, w, h, radius);
