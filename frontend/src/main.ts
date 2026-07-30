@@ -12,6 +12,7 @@ import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { installPitObstacles } from './game/systems/PitObstaclePlugin';
 import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
+import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -28,6 +29,9 @@ export const GAME_WIDTH = 720;
 export const GAME_HEIGHT = 1280;
 
 function boot() {
+  // Repair the Pirate run sheet before PreloadScene creates any animations.
+  // This fixes the transparent skull pixels inside the texture itself.
+  installPirateTextureRepair(PreloadScene);
   // Install triple timing first so the fun-gameplay wrapper can skin and tag
   // both generated and injected obstacle groups consistently.
   installTripleTiming(GameScene);
@@ -51,8 +55,8 @@ function boot() {
   // Run after the scene wrappers above so damaged tree art, run-sheet bleed,
   // and the continuous corgi trail are cleaned up after each scene is built.
   installVisualPolish(GameScene, MenuScene);
-  // Fix the Pirate purchase-release loop and place an opaque skull badge over
-  // the transparent hat area in both selection screens and gameplay.
+  // Keep the Pirate purchase-release flow atomic. Artwork is repaired directly
+  // in the runtime texture, so no overlay or backing object is created.
   installPirateCorgiFix(GameScene, CorgiSelectScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
   // Safari and iOS WKWebView both suspend the audio context until then.
