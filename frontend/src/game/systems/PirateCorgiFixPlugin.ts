@@ -1,39 +1,17 @@
 import Phaser from 'phaser';
 import { gameState, type CorgiId } from './GameState';
 
-const PATCH_KEY = 'pirate_hat_badge_opaque';
+const BACKING_KEY = 'pirate_hat_solid_backing';
 let installed = false;
 
-function buildOpaqueHatBadge(scene: any): void {
-  if (scene.textures?.exists?.(PATCH_KEY)) return;
+function buildSolidHatBacking(scene: any): void {
+  if (scene.textures?.exists?.(BACKING_KEY)) return;
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
-
-  // Solid dark backing prevents the scenery / Bone art from showing through.
   g.fillStyle(0x101827, 1);
-  g.fillRoundedRect(1, 4, 70, 38, 17);
-  g.lineStyle(3, 0x05080f, 1);
-  g.strokeRoundedRect(1, 4, 70, 38, 17);
-
-  // Crossbones.
-  g.lineStyle(6, 0xf7f1df, 1);
-  g.beginPath();
-  g.moveTo(17, 14); g.lineTo(52, 34);
-  g.moveTo(52, 14); g.lineTo(17, 34);
-  g.strokePath();
-  g.fillStyle(0xf7f1df, 1);
-  g.fillCircle(15, 13, 4); g.fillCircle(54, 35, 4);
-  g.fillCircle(54, 13, 4); g.fillCircle(15, 35, 4);
-
-  // Skull.
-  g.fillStyle(0xf7f1df, 1);
-  g.fillCircle(35, 22, 11);
-  g.fillRoundedRect(28, 25, 14, 10, 4);
-  g.fillStyle(0x101827, 1);
-  g.fillCircle(31, 21, 3);
-  g.fillCircle(39, 21, 3);
-  g.fillTriangle(35, 24, 32, 29, 38, 29);
-
-  g.generateTexture(PATCH_KEY, 72, 44);
+  g.fillRoundedRect(0, 0, 72, 36, 16);
+  g.lineStyle(2, 0x05080f, 1);
+  g.strokeRoundedRect(0, 0, 72, 36, 16);
+  g.generateTexture(BACKING_KEY, 72, 36);
   g.destroy();
 }
 
@@ -44,29 +22,44 @@ function walkDisplayTree(node: any, visit: (child: any) => void): void {
   }
 }
 
-function attachPortraitBadge(scene: any, portrait: any): void {
-  if (portrait?.getData?.('opaquePirateHatFixed')) return;
-  portrait?.setData?.('opaquePirateHatFixed', true);
+function removeOldSkullOverlays(scene: any): void {
+  for (const root of [...(scene.children?.list ?? [])]) {
+    walkDisplayTree(root, (child) => {
+      if (child?.getData?.('pirateHatOverlay')) child.destroy?.();
+    });
+  }
+}
+
+function attachPortraitBacking(scene: any, portrait: any): void {
+  if (portrait?.getData?.('pirateHatBackingAdded')) return;
+  portrait?.setData?.('pirateHatBackingAdded', true);
+  buildSolidHatBacking(scene);
 
   const displayW = Math.max(1, Number(portrait.displayWidth) || 188);
   const displayH = Math.max(1, Number(portrait.displayHeight) || 188);
-  const badge = scene.add.image(0, 0, PATCH_KEY)
-    .setDisplaySize(displayW * 0.25, displayH * 0.15)
-    .setDepth((Number(portrait.depth) || 0) + 2)
-    .setData('pirateHatOverlay', true);
+  const backing = scene.add.image(0, 0, BACKING_KEY)
+    .setDisplaySize(displayW * 0.24, displayH * 0.12)
+    .setAlpha(1)
+    .setData('pirateHatBacking', true);
 
-  const localX = Number(portrait.x) + displayW * 0.10;
+  const localX = Number(portrait.x) + displayW * 0.07;
   const localY = Number(portrait.y) - displayH * 0.34;
-  if (portrait.parentContainer?.add) {
-    portrait.parentContainer.add(badge);
-    badge.setPosition(localX, localY);
+  const parent = portrait.parentContainer;
+  if (parent?.addAt) {
+    const portraitIndex = Math.max(0, Number(parent.getIndex?.(portrait)) || 0);
+    parent.addAt(backing, portraitIndex);
+    backing.setPosition(localX, localY);
   } else {
-    badge.setPosition(localX, localY);
+    backing
+      .setPosition(localX, localY)
+      .setDepth(Math.max(0, (Number(portrait.depth) || 1) - 0.1));
   }
 }
 
 function repairPiratePortraits(scene: any): void {
-  buildOpaqueHatBadge(scene);
+  buildSolidHatBacking(scene);
+  removeOldSkullOverlays(scene);
+
   for (const root of scene.children?.list ?? []) {
     walkDisplayTree(root, (child) => {
       const key = child?.texture?.key;
@@ -79,7 +72,7 @@ function repairPiratePortraits(scene: any): void {
       child.setDisplaySize?.(w, h);
       child.setAlpha?.(1);
       child.clearTint?.();
-      attachPortraitBadge(scene, child);
+      attachPortraitBacking(scene, child);
     });
 
     const testId = root?.getData?.('testId');
@@ -90,30 +83,34 @@ function repairPiratePortraits(scene: any): void {
   }
 }
 
-function addGameplayHatPatch(scene: any): void {
+function addGameplayHatBacking(scene: any): void {
   if (gameState.selectedCorgi !== 'pirate' || !scene.corgi) return;
-  buildOpaqueHatBadge(scene);
+  buildSolidHatBacking(scene);
+  removeOldSkullOverlays(scene);
 
-  const badge = scene.add.image(scene.corgi.x + 14, scene.corgi.y - 132, PATCH_KEY)
-    .setDisplaySize(38, 24)
-    .setDepth(16)
-    .setAlpha(1);
+  // This sits BEHIND the existing pirate hat. It fills transparent pixels but
+  // does not draw another skull, so the original hat art remains unchanged.
+  const backing = scene.add.image(scene.corgi.x + 10, scene.corgi.y - 132, BACKING_KEY)
+    .setDisplaySize(38, 20)
+    .setDepth(14.9)
+    .setAlpha(1)
+    .setData('pirateHatBacking', true);
 
   const follow = () => {
-    if (!badge.active || !scene.corgi?.active) return;
-    badge.setPosition(scene.corgi.x + 14, scene.corgi.y - 132);
-    badge.setVisible(!scene.ended && gameState.selectedCorgi === 'pirate');
+    if (!backing.active || !scene.corgi?.active) return;
+    backing.setPosition(scene.corgi.x + 10, scene.corgi.y - 132);
+    backing.setVisible(!scene.ended && gameState.selectedCorgi === 'pirate');
   };
   scene.events.on(Phaser.Scenes.Events.POST_UPDATE, follow);
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
     scene.events.off(Phaser.Scenes.Events.POST_UPDATE, follow);
-    badge.destroy();
+    backing.destroy();
   });
 }
 
 /**
- * Fixes the stale pointer-release purchase loop and replaces the transparent
- * pirate skull area with a fully opaque badge in menus and gameplay.
+ * Fixes the stale pointer-release purchase loop and fills the transparent
+ * Pirate-hat area without adding a duplicate skull emblem.
  */
 export function installPirateCorgiFix(
   GameSceneClass: { prototype: object },
@@ -126,7 +123,7 @@ export function installPirateCorgiFix(
   const originalGameCreate = gameProto.create;
   gameProto.create = function (...args: unknown[]) {
     const result = originalGameCreate.apply(this, args);
-    addGameplayHatPatch(this);
+    addGameplayHatBacking(this);
     return result;
   };
 
@@ -134,15 +131,12 @@ export function installPirateCorgiFix(
   const originalSelectCreate = selectProto.create;
   selectProto.create = function (...args: unknown[]) {
     const result = originalSelectCreate.apply(this, args);
-    repairPiratePortraits(this);
+    this.time.delayedCall(0, () => repairPiratePortraits(this));
     return result;
   };
 
   const originalConfirm = selectProto.showBonePurchaseConfirm;
   selectProto.showBonePurchaseConfirm = function (id: CorgiId, price: number, name: string) {
-    // The confirm button activates on touch-down. The same finger release can
-    // reach the card after the modal closes; always re-check live ownership so
-    // that release selects the corgi instead of reopening the purchase modal.
     if (gameState.isCorgiOwned(id)) {
       this.confirming = false;
       gameState.selectedCorgi = id;
