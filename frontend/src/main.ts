@@ -6,10 +6,12 @@ import { GameScene } from './game/scenes/GameScene';
 import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
+import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { installPitObstacles } from './game/systems/PitObstaclePlugin';
 import { installVisualPolish } from './game/systems/VisualPolishPlugin';
+import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -35,8 +37,11 @@ function boot() {
   // Randomize ground-obstacle artwork from hurdle one and add fair airborne
   // bird hazards. Installed after FunGameplay so birds are not reskinned.
   installObstacleVariety(GameScene);
-  // Apply the final speed increase and enforce whole-body, one-jump triple
-  // safety after every other obstacle wrapper has finished spawning a group.
+  // A tap is now a lower jump and a short hold restores / slightly extends the
+  // previous height. HUD release events are wired here as part of the same system.
+  installVariableJump(GameScene, HUDScene);
+  // Apply the post-hurdle-five speed ramp and enforce quick-tap-safe obstacle
+  // heights plus whole-body, one-jump triple safety.
   installHardSafeBalance(GameScene);
   // Add a clear X-eyes crash reaction to every selectable corgi skin.
   installBonkEyes(GameScene);
@@ -46,6 +51,9 @@ function boot() {
   // Run after the scene wrappers above so damaged tree art, run-sheet bleed,
   // and the continuous corgi trail are cleaned up after each scene is built.
   installVisualPolish(GameScene, MenuScene);
+  // Fix the Pirate purchase-release loop and place an opaque skull badge over
+  // the transparent hat area in both selection screens and gameplay.
+  installPirateCorgiFix(GameScene, CorgiSelectScene);
   // Wire the AudioContext unlock hook onto the FIRST user gesture — iOS
   // Safari and iOS WKWebView both suspend the audio context until then.
   sound.init();

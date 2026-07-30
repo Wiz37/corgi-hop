@@ -1,8 +1,15 @@
-import { PHYSICS, jumpArc } from './HurdleGenerator';
+import { PHYSICS } from './HurdleGenerator';
+import {
+  QUICK_TAP_SAFE_OBSTACLE_HEIGHT,
+  quickTapJumpArc,
+} from './VariableJumpPlugin';
 
 const TUTORIAL_SPEED = PHYSICS.baseSpeed;
-const HARDER_GAIN_MULTIPLIER = 1.10;
+const HARDER_GAIN_MULTIPLIER = 1.13;
 const HARD_SPEED_CAP = 770;
+const EARLY_RAMP_START_SCORE = 5;
+const EARLY_RAMP_END_SCORE = 15;
+const EARLY_RAMP_END_SPEED = 380;
 const TRIPLE_EDGE_GAP = 42;
 const TRIPLE_TIMING_MARGIN_MS = 90;
 const BASE_MULTI_SKINS = [
@@ -17,13 +24,20 @@ let installed = false;
 
 export function maximumSafeTripleSpan(gameSpeed: number): number {
   const speed = Math.max(TUTORIAL_SPEED, Number(gameSpeed) || TUTORIAL_SPEED);
-  const oneJumpRange = jumpArc().horizontalRangeAtSpeed(speed);
+  const oneJumpRange = quickTapJumpArc().horizontalRangeAtSpeed(speed);
   const timingMarginPx = Math.max(36, speed * (TRIPLE_TIMING_MARGIN_MS / 1000));
 
-  // The corgi's whole collision body must enter before obstacle one and clear
-  // obstacle three before landing. Subtracting body width and a timing margin
-  // closes the score-82 hole in the old center-travel-only calculation.
+  // The LOWER quick-tap jump is the source of truth. Holding is never required.
   return Math.max(0, oneJumpRange - PHYSICS.dogColliderW - timingMarginPx);
+}
+
+function earlyRampTarget(score: number): number {
+  if (score <= EARLY_RAMP_START_SCORE) return TUTORIAL_SPEED;
+  const progress = Math.min(
+    1,
+    (score - EARLY_RAMP_START_SCORE) / (EARLY_RAMP_END_SCORE - EARLY_RAMP_START_SCORE),
+  );
+  return TUTORIAL_SPEED + (EARLY_RAMP_END_SPEED - TUTORIAL_SPEED) * progress;
 }
 
 function chooseReadableMultiSkin(scene: any): string {
@@ -47,6 +61,32 @@ function makeMultiGroupReadable(scene: any, spawned: any[]): void {
     obstacle.clearTint?.();
     obstacle.setData('funObstacleSkin', skin);
     obstacle.setData('characterObstacle', false);
+  }
+}
+
+function enforceQuickTapHeight(spawned: any[]): void {
+  for (const obstacle of spawned) {
+    if (
+      !obstacle?.active
+      || obstacle.getData?.('airHazard')
+      || obstacle.getData?.('pitObstacle')
+    ) continue;
+
+    const width = Math.max(1, Number(obstacle.displayWidth) || 90);
+    const height = Math.max(1, Number(obstacle.displayHeight) || 90);
+    if (height <= QUICK_TAP_SAFE_OBSTACLE_HEIGHT) continue;
+
+    obstacle.setDisplaySize(width, QUICK_TAP_SAFE_OBSTACLE_HEIGHT);
+    const hitRect = obstacle.hitRect;
+    if (hitRect) {
+      const collisionHeight = Math.min(
+        Number(hitRect.height) || QUICK_TAP_SAFE_OBSTACLE_HEIGHT,
+        QUICK_TAP_SAFE_OBSTACLE_HEIGHT * 0.90,
+      );
+      hitRect.y = -collisionHeight;
+      hitRect.height = collisionHeight;
+    }
+    obstacle.setData('quickTapHeightClamped', true);
   }
 }
 
@@ -97,8 +137,8 @@ function enforceOneJumpTriple(scene: any, spawned: any[]): void {
 }
 
 /**
- * Raises post-tutorial speed modestly and applies a final runtime safety gate to
- * every triple, including both score-50 injected triples and generator triples.
+ * Starts a modest speed ramp immediately after hurdle five and applies final
+ * runtime safety gates using the lower quick-tap jump—not the optional hold.
  */
 export function installHardSafeBalance(GameSceneClass: { prototype: object }): void {
   if (installed) return;
@@ -112,10 +152,13 @@ export function installHardSafeBalance(GameSceneClass: { prototype: object }): v
       const result = originalUpdate.apply(this, args);
       const score = Math.max(0, Number(this.score) || 0);
       const baseTarget = Math.max(TUTORIAL_SPEED, Number(this.targetSpeed) || TUTORIAL_SPEED);
-      if (score > 7 && !this.ended) {
-        const harderTarget = TUTORIAL_SPEED
+      if (score > EARLY_RAMP_START_SCORE && !this.ended) {
+        const harderCurveTarget = TUTORIAL_SPEED
           + (baseTarget - TUTORIAL_SPEED) * HARDER_GAIN_MULTIPLIER;
-        this.targetSpeed = Math.min(HARD_SPEED_CAP, Math.max(baseTarget, harderTarget));
+        this.targetSpeed = Math.min(
+          HARD_SPEED_CAP,
+          Math.max(baseTarget, harderCurveTarget, earlyRampTarget(score)),
+        );
       }
       return result;
     };
@@ -130,6 +173,7 @@ export function installHardSafeBalance(GameSceneClass: { prototype: object }): v
       const spawned = all.slice(before).filter((obstacle: any) => obstacle?.active);
 
       makeMultiGroupReadable(this, spawned);
+      enforceQuickTapHeight(spawned);
       enforceOneJumpTriple(this, spawned);
       return result;
     };
