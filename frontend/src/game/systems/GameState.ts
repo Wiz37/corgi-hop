@@ -9,9 +9,17 @@ export type CorgiId =
   | 'classic'
   | 'starter'
   | 'cowboy'
+  | 'sunset'
   | 'superhero'
+  | 'forest'
   | 'pirate'
-  | 'astronaut';
+  | 'mint'
+  | 'berry'
+  | 'astronaut'
+  | 'shadow'
+  | 'golden'
+  | 'snow'
+  | 'royal';
 
 export interface CorgiDef {
   id: CorgiId;
@@ -40,27 +48,67 @@ export const CORGIS: CorgiDef[] = [
     runSheetKey: 'cowboy_run', runAnimKey: 'cowboy_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'sunset', name: 'Sunset Surfer Corgi', texture: 'corgi_sunset',
+    runSheetKey: 'sunset_run', runAnimKey: 'sunset_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'superhero', name: 'Superhero Corgi', texture: 'corgi_superhero',
     runSheetKey: 'superhero_run', runAnimKey: 'superhero_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'forest', name: 'Forest Scout Corgi', texture: 'corgi_forest',
+    runSheetKey: 'forest_run', runAnimKey: 'forest_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'pirate', name: 'Pirate Corgi', texture: 'corgi_pirate',
     runSheetKey: 'pirate_run_fixed', runAnimKey: 'pirate_run_fixed',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'mint', name: 'Mint Medic Corgi', texture: 'corgi_mint',
+    runSheetKey: 'mint_run', runAnimKey: 'mint_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
+  { id: 'berry', name: 'Berry Princess Corgi', texture: 'corgi_berry',
+    runSheetKey: 'berry_run', runAnimKey: 'berry_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'astronaut', name: 'Astronaut Corgi', texture: 'corgi_astronaut',
     runSheetKey: 'astronaut_run', runAnimKey: 'astronaut_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
+  { id: 'shadow', name: 'Shadow Ninja Corgi', texture: 'corgi_shadow',
+    runSheetKey: 'shadow_run', runAnimKey: 'shadow_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
+  { id: 'golden', name: 'Golden King Corgi', texture: 'corgi_golden',
+    runSheetKey: 'golden_run', runAnimKey: 'golden_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
+  { id: 'snow', name: 'Snow Angel Corgi', texture: 'corgi_snow',
+    runSheetKey: 'snow_run', runAnimKey: 'snow_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
+  { id: 'royal', name: 'Royal Wizard Corgi', texture: 'corgi_royal',
+    runSheetKey: 'royal_run', runAnimKey: 'royal_run',
+    jumpFrame: 4, fallFrame: 6, landFrame: 0,
+    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
 ];
 
 export const CORGI_BONE_PRICE: Record<CorgiId, number> = {
   classic: 0,
   starter: 250,
   cowboy: 500,
+  sunset: 700,
   superhero: 900,
+  forest: 1150,
   pirate: 1400,
+  mint: 1650,
+  berry: 1900,
   astronaut: 2200,
+  shadow: 2500,
+  golden: 2850,
+  snow: 3200,
+  royal: 3500,
 };
 
 export const RARE_CORGI_BONE_PRICE = 3500;
@@ -79,6 +127,8 @@ export const EMPTY_ENTITLEMENTS: Entitlements = {
   allCorgis: false,
 };
 
+const ALL_CORGI_IDS = CORGIS.map((corgi) => corgi.id) as CorgiId[];
+
 class GameStateStore {
   bestScore = 0;
   bestStreak = 0;
@@ -92,21 +142,18 @@ class GameStateStore {
   totalJumps = 0;
 
   private trialCorgi: CorgiId | null = null;
-  boneUnlocks: Record<CorgiId, boolean> = {
-    classic: true,
-    starter: false,
-    cowboy: false,
-    superhero: false,
-    pirate: false,
-    astronaut: false,
-  };
+  boneUnlocks: Record<CorgiId, boolean> = ALL_CORGI_IDS.reduce((acc, id) => {
+    acc[id] = id === 'classic';
+    return acc;
+  }, {} as Record<CorgiId, boolean>);
   private purchaseInFlight = false;
 
   load(): void {
     this.bestScore = storage.getNumber(K.bestScore, 0);
     this.bestStreak = storage.getNumber(K.bestStreak, 0);
     this.treats = storage.getNumber(K.treats, 0);
-    this.selectedCorgi = storage.getString(K.selectedCorgi, 'classic') as CorgiId;
+    const selected = storage.getString(K.selectedCorgi, 'classic') as CorgiId;
+    this.selectedCorgi = ALL_CORGI_IDS.includes(selected) ? selected : 'classic';
     this.runsCompleted = storage.getNumber(K.runsCompleted, 0);
     this.lastInterstitialAt = storage.getNumber(K.lastInterstitialAt, 0);
     this.entitlements = storage.getJSON<Entitlements>(K.entitlements, { ...EMPTY_ENTITLEMENTS });
@@ -114,14 +161,10 @@ class GameStateStore {
     this.totalTreatsEarned = storage.getNumber(K.totalTreatsEarned, 0);
     this.totalJumps = storage.getNumber(K.totalJumps, 0);
     const persisted = storage.getJSON<Record<string, boolean>>(K.boneUnlocks, {} as Record<string, boolean>);
-    this.boneUnlocks = {
-      classic: true,
-      starter: !!persisted.starter,
-      cowboy: !!persisted.cowboy,
-      superhero: !!persisted.superhero,
-      pirate: !!persisted.pirate,
-      astronaut: !!persisted.astronaut,
-    };
+    this.boneUnlocks = ALL_CORGI_IDS.reduce((acc, id) => {
+      acc[id] = id === 'classic' ? true : !!persisted[id];
+      return acc;
+    }, {} as Record<CorgiId, boolean>);
   }
 
   saveBoneUnlocks(): void { storage.setJSON(K.boneUnlocks, this.boneUnlocks); }
@@ -174,7 +217,7 @@ class GameStateStore {
   isCorgiOwned(id: CorgiId): boolean {
     if (this.trialCorgi === id) return true;
     if (this.boneUnlocks[id]) return true;
-    const def = CORGIS.find((c) => c.id === id);
+    const def = CORGIS.find((corgi) => corgi.id === id);
     if (!def) return false;
     if (!def.premium) return true;
     for (const product of def.entitlementProducts) {
@@ -188,7 +231,7 @@ class GameStateStore {
   unlockCorgiWithBones(id: CorgiId): { ok: boolean; reason?: string; spent?: number } {
     if (this.purchaseInFlight) return { ok: false, reason: 'Purchase already in progress' };
     if (this.isCorgiOwned(id)) return { ok: false, reason: 'Already unlocked' };
-    const def = CORGIS.find((c) => c.id === id);
+    const def = CORGIS.find((corgi) => corgi.id === id);
     if (!def) return { ok: false, reason: 'Unknown corgi' };
     const price = CORGI_BONE_PRICE[id] ?? 0;
     if (price <= 0) return { ok: false, reason: 'This corgi is free' };
