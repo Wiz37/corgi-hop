@@ -45,7 +45,7 @@ export const CORGIS: CorgiDef[] = [
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
   { id: 'pirate', name: 'Pirate Corgi', texture: 'corgi_pirate',
-    runSheetKey: 'pirate_run', runAnimKey: 'pirate_run',
+    runSheetKey: 'pirate_run_fixed', runAnimKey: 'pirate_run_fixed',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
   { id: 'astronaut', name: 'Astronaut Corgi', texture: 'corgi_astronaut',
