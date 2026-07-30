@@ -51,9 +51,8 @@ export function quickTapJumpArc(): QuickTapArc {
 export const QUICK_TAP_SAFE_OBSTACLE_HEIGHT = Math.floor(quickTapJumpArc().peakPx * 0.68);
 
 /**
- * Tap gives the approved lower jump. Holding now gives a modestly higher ceiling
- * than the previous build, while all required obstacle validation still uses
- * the lower quick-tap arc.
+ * Tap gives the approved lower jump. Holding gives a modestly higher ceiling,
+ * while all required obstacle validation still uses the lower quick-tap arc.
  */
 export function installVariableJump(
   GameSceneClass: { prototype: object },
@@ -131,22 +130,64 @@ export function installVariableJump(
   const originalHudCreate = hudProto.create;
   hudProto.create = function (...args: unknown[]) {
     const result = originalHudCreate.apply(this, args);
+    const children = this.children?.list ?? [];
     const gameScene = this.scene.get('GameScene') as any;
-    const jumpHit = (this.children?.list ?? []).find(
+    const jumpHit = children.find(
       (child: any) => child?.getData?.('testId') === 'hud-jump-button',
     );
     jumpHit?.on?.('pointerup', () => gameScene.releaseJump?.());
     jumpHit?.on?.('pointerout', () => gameScene.releaseJump?.());
 
-    const label = (this.children?.list ?? []).find(
+    const paw = children.find(
+      (child: any) => child?.getData?.('testId') === 'hud-jump-button-art',
+    ) as Phaser.GameObjects.Image | undefined;
+    const pawBackground = children.find(
+      (child: any) => child instanceof Phaser.GameObjects.Graphics && child.depth === 49,
+    ) as Phaser.GameObjects.Graphics | undefined;
+
+    const pawX = 360;
+    const pawY = 1050;
+    const pawRadius = 96;
+
+    if (pawBackground) {
+      pawBackground.clear();
+      pawBackground.fillStyle(0x18223a, 0.5);
+      pawBackground.fillCircle(pawX + 3, pawY + 6, pawRadius);
+      pawBackground.fillStyle(0xffffff, 0.55);
+      pawBackground.fillCircle(pawX, pawY, pawRadius);
+      pawBackground.fillStyle(0xffffff, 0.35);
+      pawBackground.fillCircle(
+        pawX - pawRadius * 0.3,
+        pawY - pawRadius * 0.3,
+        pawRadius * 0.55,
+      );
+      pawBackground.lineStyle(6, 0xffffff, 0.9);
+      pawBackground.strokeCircle(pawX, pawY, pawRadius);
+    }
+
+    if (paw) {
+      this.tweens?.killTweensOf?.(paw);
+      paw.setPosition(pawX, pawY);
+      paw.setDisplaySize(188, 188);
+      this.tweens?.add?.({
+        targets: paw,
+        scale: paw.scale * 1.03,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    const label = children.find(
       (child: any) => child instanceof Phaser.GameObjects.Text && child.text === 'TAP TO JUMP',
     ) as Phaser.GameObjects.Text | undefined;
     label?.setText('TAP = LOW  •  HOLD = HIGH');
-    label?.setFontSize(24);
-    label?.setY(900);
+    label?.setFontSize(23);
+    label?.setPosition(360, 1190);
     label?.setDepth(54);
     label?.setBackgroundColor('rgba(36,48,74,0.58)');
-    label?.setPadding(12, 6, 12, 6);
+    label?.setPadding(10, 5, 10, 5);
     return result;
   };
 }
