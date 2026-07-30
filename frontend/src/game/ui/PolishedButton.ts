@@ -48,7 +48,7 @@ export class PolishedButton extends Phaser.GameObjects.Container {
       shadowColor: 0xb26810,
       strokeColor: 0x24304a,
       textColor: '#ffffff',
-      fontSize: Math.round(opts.h * 0.42),
+      fontSize: Math.round(opts.h * 0.48),
       iconScale: 1,
       depth: 30,
       ...opts,
@@ -61,21 +61,34 @@ export class PolishedButton extends Phaser.GameObjects.Container {
     this.add(this.graphics);
     this.drawBackground(false);
 
-    if (opts.iconTexture && scene.textures.exists(opts.iconTexture)) {
-      const icon = scene.add.image(-opts.w * 0.32, 0, opts.iconTexture);
-      const iconSize = opts.h * 0.7 * (opts.iconScale ?? 1);
+    const hasIcon = !!(opts.iconTexture && scene.textures.exists(opts.iconTexture));
+    if (hasIcon && opts.iconTexture) {
+      // Keep the icon and label centered as one visual group. The old -32% icon
+      // offset left a large empty area on the right and made PLAY feel left-heavy.
+      const iconX = -Math.min(opts.w * 0.18, opts.h * 0.68);
+      const icon = scene.add.image(iconX, 0, opts.iconTexture);
+      const iconSize = opts.h * 0.68 * (opts.iconScale ?? 1);
       icon.setDisplaySize(iconSize, iconSize);
       this.add(icon);
     }
 
-    this.text = scene.add.text(0, -2, opts.label, {
+    const labelX = hasIcon ? Math.min(opts.w * 0.09, opts.h * 0.32) : 0;
+    this.text = scene.add.text(labelX, -2, opts.label, {
       fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
       fontSize: `${this.opts.fontSize}px`,
       fontStyle: '900',
       color: this.opts.textColor,
       stroke: '#24304a',
       strokeThickness: 6,
+      align: 'center',
     }).setOrigin(0.5);
+
+    // Use more of the button face while guaranteeing that long labels still fit.
+    const maxLabelWidth = hasIcon ? opts.w * 0.60 : opts.w - 28;
+    if (this.text.width > maxLabelWidth) {
+      const fitScale = maxLabelWidth / this.text.width;
+      this.text.setScale(fitScale);
+    }
     this.add(this.text);
 
     this.setSize(opts.w, opts.h);
