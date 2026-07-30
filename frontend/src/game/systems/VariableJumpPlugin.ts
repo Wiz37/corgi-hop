@@ -73,24 +73,34 @@ export function installVariableJump(
     this.jumpVelocity = QUICK_TAP_VELOCITY;
     states.set(this, { pointerHeld: false, jumpStartedAt: 0 });
 
+    // tryJump is a class-field arrow function, so it lives on the instance—not
+    // the prototype. Rebind the listeners that GameScene.create registered.
+    const originalTryJump = this.tryJump;
+    this.input?.off?.('pointerdown', originalTryJump, this);
+    this.input?.keyboard?.off?.('keydown-SPACE', originalTryJump, this);
+    this.input?.keyboard?.off?.('keydown-UP', originalTryJump, this);
+
+    this.tryJump = (...jumpArgs: unknown[]) => {
+      const state = stateFor(this);
+      state.pointerHeld = true;
+      const beforeVelocity = Number(this.corgi?.body?.velocity?.y) || 0;
+      const jumpResult = originalTryJump.apply(this, jumpArgs);
+      const afterVelocity = Number(this.corgi?.body?.velocity?.y) || 0;
+      if (afterVelocity <= QUICK_TAP_VELOCITY + 5 && afterVelocity < beforeVelocity - 100) {
+        state.jumpStartedAt = Number(this.time?.now) || 0;
+      }
+      return jumpResult;
+    };
+
+    this.input?.on?.('pointerdown', this.tryJump, this);
+    this.input?.keyboard?.on?.('keydown-SPACE', this.tryJump, this);
+    this.input?.keyboard?.on?.('keydown-UP', this.tryJump, this);
+
     const release = () => this.releaseJump?.();
     this.input?.on?.('pointerup', release);
     this.input?.on?.('pointerupoutside', release);
     this.input?.keyboard?.on?.('keyup-SPACE', release);
     this.input?.keyboard?.on?.('keyup-UP', release);
-    return result;
-  };
-
-  const originalTryJump = gameProto.tryJump;
-  gameProto.tryJump = function (...args: unknown[]) {
-    const state = stateFor(this);
-    state.pointerHeld = true;
-    const beforeVelocity = Number(this.corgi?.body?.velocity?.y) || 0;
-    const result = originalTryJump.apply(this, args);
-    const afterVelocity = Number(this.corgi?.body?.velocity?.y) || 0;
-    if (afterVelocity <= QUICK_TAP_VELOCITY + 5 && afterVelocity < beforeVelocity - 100) {
-      state.jumpStartedAt = Number(this.time?.now) || 0;
-    }
     return result;
   };
 
