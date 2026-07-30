@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 
 export const QUICK_TAP_VELOCITY = -850;
 export const HOLD_START_DELAY_MS = 45;
-export const MAX_HOLD_MS = 300;
-export const HOLD_UPWARD_ACCELERATION = 500;
+export const MAX_HOLD_MS = 320;
+export const HOLD_UPWARD_ACCELERATION = 650;
+export const MAX_HELD_UPWARD_VELOCITY = -1100;
 
 const WORLD_GRAVITY = 2100;
 const RISE_GRAVITY_OFFSET = -300;
@@ -32,10 +33,7 @@ export interface QuickTapArc {
   horizontalRangeAtSpeed: (speed: number) => number;
 }
 
-/**
- * The quick-tap arc is the fairness baseline. A hold is optional extra lift;
- * no generated obstacle is allowed to require it.
- */
+/** The quick-tap arc remains the fairness baseline. */
 export function quickTapJumpArc(): QuickTapArc {
   const initialVelocity = Math.abs(QUICK_TAP_VELOCITY);
   const riseGravity = WORLD_GRAVITY + RISE_GRAVITY_OFFSET;
@@ -53,10 +51,9 @@ export function quickTapJumpArc(): QuickTapArc {
 export const QUICK_TAP_SAFE_OBSTACLE_HEIGHT = Math.floor(quickTapJumpArc().peakPx * 0.68);
 
 /**
- * Adds variable jump height without changing the one-button control scheme.
- * A tap launches at a 20%-lower peak than the previous jump. Holding for up to
- * 300 ms applies a gentle upward assist that restores the old height and gives
- * only a small additional maximum. Releasing immediately stops the assist.
+ * Tap gives the approved lower jump. Holding now gives a modestly higher ceiling
+ * than the previous build, while all required obstacle validation still uses
+ * the lower quick-tap arc.
  */
 export function installVariableJump(
   GameSceneClass: { prototype: object },
@@ -73,8 +70,6 @@ export function installVariableJump(
     this.jumpVelocity = QUICK_TAP_VELOCITY;
     states.set(this, { pointerHeld: false, jumpStartedAt: 0 });
 
-    // tryJump is a class-field arrow function, so it lives on the instance—not
-    // the prototype. Rebind the listeners that GameScene.create registered.
     const originalTryJump = this.tryJump;
     this.input?.off?.('pointerdown', originalTryJump, this);
     this.input?.keyboard?.off?.('keydown-SPACE', originalTryJump, this);
@@ -125,7 +120,7 @@ export function installVariableJump(
       && !this.ended
     ) {
       const boost = HOLD_UPWARD_ACCELERATION * Math.max(0, delta) / 1000;
-      body.setVelocityY(Math.max(-1040, body.velocity.y - boost));
+      body.setVelocityY(Math.max(MAX_HELD_UPWARD_VELOCITY, body.velocity.y - boost));
     }
 
     if (elapsed > MAX_HOLD_MS) state.pointerHeld = false;
@@ -147,7 +142,11 @@ export function installVariableJump(
       (child: any) => child instanceof Phaser.GameObjects.Text && child.text === 'TAP TO JUMP',
     ) as Phaser.GameObjects.Text | undefined;
     label?.setText('TAP = LOW  •  HOLD = HIGH');
-    label?.setFontSize(25);
+    label?.setFontSize(24);
+    label?.setY(900);
+    label?.setDepth(54);
+    label?.setBackgroundColor('rgba(36,48,74,0.58)');
+    label?.setPadding(12, 6, 12, 6);
     return result;
   };
 }
