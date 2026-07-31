@@ -15,6 +15,7 @@ import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPl
 import { installPremiumCorgiPolish } from './game/systems/PremiumCorgiPolishPlugin';
 import { installPremiumCorgiRedesign } from './game/systems/PremiumCorgiRedesignPlugin';
 import { installBespokeCorgiSkins } from './game/systems/BespokeCorgiSkinsPlugin';
+import { installPremiumCorgiNormalization } from './game/systems/PremiumCorgiNormalizationPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -44,9 +45,12 @@ function boot() {
   installPremiumCorgiPolish(PreloadScene, GameScene, MenuScene, HUDScene, CorgiSelectScene);
   // Keeps the cleaned-up pager and compatibility with previous saves.
   installPremiumCorgiRedesign(PreloadScene, CorgiSelectScene);
-  // Final art pass: rebuild every new premium skin from the Classic anatomy
-  // with a unique title-matched layered costume instead of copied premium art.
+  // Builds the eight title-matched costume themes from one consistent body.
   installBespokeCorgiSkins(PreloadScene);
+  // Final correction pass: normalizes portrait/run scale to the original
+  // premium corgis and uses separate portrait/run anatomy anchors so hats,
+  // collars, packs, capes, wings, and scarves sit on the body correctly.
+  installPremiumCorgiNormalization(PreloadScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
