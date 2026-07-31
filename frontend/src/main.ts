@@ -12,7 +12,6 @@ import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
-import { installPremiumCorgiPolish } from './game/systems/PremiumCorgiPolishPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -36,7 +35,6 @@ function boot() {
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
-  installPremiumCorgiPolish(PreloadScene, GameScene, MenuScene, HUDScene, CorgiSelectScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
