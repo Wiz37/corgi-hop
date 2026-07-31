@@ -14,6 +14,7 @@ import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
 import { installPremiumCorgiPolish } from './game/systems/PremiumCorgiPolishPlugin';
 import { installPremiumCorgiRedesign } from './game/systems/PremiumCorgiRedesignPlugin';
+import { installBespokeCorgiSkins } from './game/systems/BespokeCorgiSkinsPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -41,10 +42,11 @@ function boot() {
   // natural gait polish, paged expanded corgi store, and removes menu rain.
   // Pit obstacles are intentionally no longer installed.
   installPremiumCorgiPolish(PreloadScene, GameScene, MenuScene, HUDScene, CorgiSelectScene);
-  // Rebuilds the eight new corgis from the original premium artwork using
-  // integrated palette changes only—no floating geometric costume overlays.
-  // It also replaces the cramped page controls with a balanced bottom pager.
+  // Keeps the cleaned-up pager and compatibility with previous saves.
   installPremiumCorgiRedesign(PreloadScene, CorgiSelectScene);
+  // Final art pass: rebuild every new premium skin from the Classic anatomy
+  // with a unique title-matched layered costume instead of copied premium art.
+  installBespokeCorgiSkins(PreloadScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
