@@ -9,17 +9,9 @@ export type CorgiId =
   | 'classic'
   | 'starter'
   | 'cowboy'
-  | 'sunset'
   | 'superhero'
-  | 'forest'
   | 'pirate'
-  | 'mint'
-  | 'berry'
-  | 'astronaut'
-  | 'shadow'
-  | 'golden'
-  | 'snow'
-  | 'royal';
+  | 'astronaut';
 
 export interface CorgiDef {
   id: CorgiId;
@@ -48,67 +40,27 @@ export const CORGIS: CorgiDef[] = [
     runSheetKey: 'cowboy_run', runAnimKey: 'cowboy_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'sunset', name: 'Sunset Surfer Corgi', texture: 'corgi_sunset',
-    runSheetKey: 'sunset_run', runAnimKey: 'sunset_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'superhero', name: 'Superhero Corgi', texture: 'corgi_superhero',
     runSheetKey: 'superhero_run', runAnimKey: 'superhero_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'forest', name: 'Forest Scout Corgi', texture: 'corgi_forest',
-    runSheetKey: 'forest_run', runAnimKey: 'forest_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'pirate', name: 'Pirate Corgi', texture: 'corgi_pirate',
     runSheetKey: 'pirate_run_fixed', runAnimKey: 'pirate_run_fixed',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'mint', name: 'Mint Medic Corgi', texture: 'corgi_mint',
-    runSheetKey: 'mint_run', runAnimKey: 'mint_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
-  { id: 'berry', name: 'Berry Princess Corgi', texture: 'corgi_berry',
-    runSheetKey: 'berry_run', runAnimKey: 'berry_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
   { id: 'astronaut', name: 'Astronaut Corgi', texture: 'corgi_astronaut',
     runSheetKey: 'astronaut_run', runAnimKey: 'astronaut_run',
     jumpFrame: 4, fallFrame: 6, landFrame: 0,
     premium: true, entitlementProducts: ['com.corgihop.premium_corgis', 'com.corgihop.all_corgis'] },
-  { id: 'shadow', name: 'Shadow Ninja Corgi', texture: 'corgi_shadow',
-    runSheetKey: 'shadow_run', runAnimKey: 'shadow_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
-  { id: 'golden', name: 'Golden King Corgi', texture: 'corgi_golden',
-    runSheetKey: 'golden_run', runAnimKey: 'golden_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
-  { id: 'snow', name: 'Snow Angel Corgi', texture: 'corgi_snow',
-    runSheetKey: 'snow_run', runAnimKey: 'snow_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
-  { id: 'royal', name: 'Royal Wizard Corgi', texture: 'corgi_royal',
-    runSheetKey: 'royal_run', runAnimKey: 'royal_run',
-    jumpFrame: 4, fallFrame: 6, landFrame: 0,
-    premium: true, entitlementProducts: ['com.corgihop.all_corgis'] },
 ];
 
 export const CORGI_BONE_PRICE: Record<CorgiId, number> = {
   classic: 0,
   starter: 250,
   cowboy: 500,
-  sunset: 700,
   superhero: 900,
-  forest: 1150,
   pirate: 1400,
-  mint: 1650,
-  berry: 1900,
   astronaut: 2200,
-  shadow: 2500,
-  golden: 2850,
-  snow: 3200,
-  royal: 3500,
 };
 
 export const RARE_CORGI_BONE_PRICE = 3500;
@@ -165,6 +117,8 @@ class GameStateStore {
       acc[id] = id === 'classic' ? true : !!persisted[id];
       return acc;
     }, {} as Record<CorgiId, boolean>);
+    this.saveBoneUnlocks();
+    this.saveSelected();
   }
 
   saveBoneUnlocks(): void { storage.setJSON(K.boneUnlocks, this.boneUnlocks); }
