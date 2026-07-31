@@ -1,0 +1,11 @@
+import type{ExpansionDef}from'./PremiumExpansionCatalog';import{OUTLINE,curve,ellipse,roundedRect,line,star,grad}from'./PremiumExpansionArtCore';import{type A,vest,brimHat,goggles,bow,helmet}from'./PremiumExpansionOutfitHelpers';
+export function drawBehindB(ctx:CanvasRenderingContext2D,d:ExpansionDef,x:number,y:number,s:number):void{if(d.theme==='surfer')roundedRect(ctx,x-113*s,y-75*s,25*s,146*s,12*s,grad(ctx,0,y-75*s,0,y+70*s,[[0,'#26afd0'],[.5,'#f8d34e'],[1,'#2d79c7']]),OUTLINE,4*s);if(d.theme==='lifeguard')roundedRect(ctx,x-103*s,y-29*s,31*s,81*s,15*s,'#df3a35',OUTLINE,4*s);if(d.theme==='ninja'){line(ctx,[[x+22*s,y-60*s],[x-88*s,y+20*s]],'#34251f',8*s);line(ctx,[[x+19*s,y-63*s],[x-91*s,y+17*s]],'#caa04d',3*s);}}
+export function drawFrontB(ctx:CanvasRenderingContext2D,d:ExpansionDef,a:A):void{const{headX:hx,headY:hy,bodyX:x,bodyY:y,s}=a;switch(d.theme){
+case'ninja':helmet(ctx,a,'#202129');vest(ctx,a,'#202129','#555866');line(ctx,[[x+45*s,y-40*s],[x-58*s,y+22*s]],'#5d4934',5*s);break;
+case'mariachi':brimHat(ctx,a,'#171822','#d6a736');vest(ctx,a,'#181922','#d6a736');bow(ctx,a);break;
+case'lifeguard':brimHat(ctx,a,'#f4f1e7','#d63c36');vest(ctx,a,'#d63c36','#fff');ellipse(ctx,x+57*s,y-7*s,5*s,7*s,'#bfc5ce',OUTLINE,1*s);break;
+case'surfer':vest(ctx,a,'#2ca8b8','#f5e47d');goggles(ctx,a,'#161923');ellipse(ctx,x+50*s,y-28*s,9*s,9*s,'#d9ad41',OUTLINE,2*s);break;
+case'painter':brimHat(ctx,a,'#25242f','#e84e4e');vest(ctx,a,'#efe5cf','#e84e4e');for(const[dx,dy,c]of[[-52,-34,'#e84e4e'],[-22,-44,'#f4c942'],[10,-31,'#4a91df'],[-40,0,'#6fba56'],[4,7,'#a865d9']])ellipse(ctx,x+Number(dx)*s,y+Number(dy)*s,6*s,5*s,String(c),'rgba(0,0,0,0)',0);break;
+case'gardener':brimHat(ctx,a,'#d5bd75','#4f7e48');vest(ctx,a,'#4f7e48','#d5bd75');roundedRect(ctx,x-42*s,y-18*s,32*s,28*s,4*s,'#355f39',OUTLINE,2*s);break;
+case'pharaoh':curve(ctx,[['M',hx-43*s,hy-48*s],['L',hx-34*s,hy-98*s],['L',hx+35*s,hy-98*s],['L',hx+45*s,hy-48*s],['Q',hx,hy-20*s,hx-43*s,hy-48*s],['Z']],'#d7ad35',OUTLINE,4*s);for(let i=0;i<6;i++)line(ctx,[[hx+(-30+i*12)*s,hy-94*s],[hx+(-24+i*12)*s,hy-48*s]],i%2===0?'#24579e':'#d7ad35',7*s);ellipse(ctx,x+54*s,y-8*s,12*s,16*s,'#2c6db5',OUTLINE,3*s);break;
+case'spaceCaptain':vest(ctx,a,'#f4f3ee','#183c74');helmet(ctx,a,'#f4f3ee');star(ctx,x+29*s,y-17*s,11*s,'#2d6cac','#d3a735',3*s);break;}}

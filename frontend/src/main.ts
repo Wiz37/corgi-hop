@@ -16,6 +16,7 @@ import { installPremiumCorgiPolish } from './game/systems/PremiumCorgiPolishPlug
 import { installPremiumCorgiRedesign } from './game/systems/PremiumCorgiRedesignPlugin';
 import { installBespokeCorgiSkins } from './game/systems/BespokeCorgiSkinsPlugin';
 import { installPremiumCorgiNormalization } from './game/systems/PremiumCorgiNormalizationPlugin';
+import { installPremiumExpansion } from './game/systems/PremiumExpansionPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -39,18 +40,11 @@ function boot() {
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
-  // Adds the sunny menu/game background, corrected pause hit target,
-  // natural gait polish, paged expanded corgi store, and removes menu rain.
-  // Pit obstacles are intentionally no longer installed.
   installPremiumCorgiPolish(PreloadScene, GameScene, MenuScene, HUDScene, CorgiSelectScene);
-  // Keeps the cleaned-up pager and compatibility with previous saves.
   installPremiumCorgiRedesign(PreloadScene, CorgiSelectScene);
-  // Builds the eight title-matched costume themes from one consistent body.
   installBespokeCorgiSkins(PreloadScene);
-  // Final correction pass: normalizes portrait/run scale to the original
-  // premium corgis and uses separate portrait/run anatomy anchors so hats,
-  // collars, packs, capes, wings, and scarves sit on the body correctly.
   installPremiumCorgiNormalization(PreloadScene);
+  installPremiumExpansion(PreloadScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
@@ -62,39 +56,15 @@ function boot() {
     pixelArt: false,
     antialias: true,
     roundPixels: true,
-    scale: {
-      mode: Phaser.Scale.FIT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-      width: GAME_WIDTH,
-      height: GAME_HEIGHT,
-    },
-    physics: {
-      default: 'arcade',
-      arcade: {
-        gravity: { x: 0, y: 2100 },
-        debug: false,
-      },
-    },
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: GAME_WIDTH, height: GAME_HEIGHT },
+    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 2100 }, debug: false } },
     input: { activePointers: 3 },
     fps: { target: 60 },
     dom: { createContainer: false },
-    scene: [
-      BootScene,
-      PreloadScene,
-      MenuScene,
-      GameScene,
-      HUDScene,
-      PauseScene,
-      GameOverScene,
-      ShopScene,
-      CorgiSelectScene,
-      PrivacyScene,
-      HowToPlayScene,
-    ],
+    scene: [BootScene, PreloadScene, MenuScene, GameScene, HUDScene, PauseScene, GameOverScene, ShopScene, CorgiSelectScene, PrivacyScene, HowToPlayScene],
   };
 
   services.init();
-
   const game = new Phaser.Game(config);
   (window as any).__CORGI_HOP__ = game;
 
@@ -110,10 +80,7 @@ function boot() {
     }
   };
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) pauseIfNeeded();
-    else void sound.ensureUnlocked();
-  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseIfNeeded(); else void sound.ensureUnlocked(); });
   window.addEventListener('focus', () => { void sound.ensureUnlocked(); });
   window.addEventListener('blur', pauseIfNeeded);
   window.addEventListener('pagehide', pauseIfNeeded);
@@ -122,26 +89,15 @@ function boot() {
   const isNative = !!(w.Capacitor && w.Capacitor.isNativePlatform && w.Capacitor.isNativePlatform());
   if (isNative) {
     const modPath = '@capacitor/app';
-    import(/* @vite-ignore */ modPath)
-      .then(({ App }: any) => {
-        App.addListener('appStateChange', (state: { isActive: boolean }) => {
-          if (!state.isActive) pauseIfNeeded();
-          else void sound.ensureUnlocked();
-        });
-      })
-      .catch(() => { /* optional in browser preview */ });
+    import(/* @vite-ignore */ modPath).then(({ App }: any) => {
+      App.addListener('appStateChange', (state: { isActive: boolean }) => { if (!state.isActive) pauseIfNeeded(); else void sound.ensureUnlocked(); });
+    }).catch(() => { /* optional in browser preview */ });
   }
 
-  const hideBoot = () => {
-    const el = document.getElementById('boot');
-    if (el) el.style.display = 'none';
-  };
+  const hideBoot = () => { const el = document.getElementById('boot'); if (el) el.style.display = 'none'; };
   game.events.once(Phaser.Core.Events.READY, hideBoot);
   setTimeout(hideBoot, 3000);
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
-} else {
-  boot();
-}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
