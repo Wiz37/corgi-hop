@@ -28,7 +28,7 @@ export const GAME_HEIGHT = 1280;
 
 function boot() {
   installPirateTextureRepair(PreloadScene);
-  installNewCorgiPack(PreloadScene, CorgiSelectScene);
+  installNewCorgiPack(PreloadScene, CorgiSelectScene, GameScene);
   installTripleTiming(GameScene);
   installFunGameplay(GameScene);
   installObstacleVariety(GameScene);
