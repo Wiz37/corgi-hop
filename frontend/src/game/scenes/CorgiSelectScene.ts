@@ -22,25 +22,28 @@ export class CorgiSelectScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.22);
     g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    this.add.text(GAME_WIDTH / 2, 72, 'CHOOSE CORGI', {
+    this.add.text(GAME_WIDTH / 2, 58, 'CHOOSE CORGI', {
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '56px', fontStyle: '900',
-      color: '#ffb02f', stroke: '#ffffff', strokeThickness: 12,
+      fontSize: '54px', fontStyle: '900',
+      color: '#ffb02f', stroke: '#ffffff', strokeThickness: 11,
       shadow: { color: '#24304a', fill: true, blur: 4, offsetX: 0, offsetY: 6 },
     }).setOrigin(0.5).setDepth(30).setData('testId', 'select-title');
 
-    this.add.text(GAME_WIDTH / 2, 132, 'Tap a locked corgi to review and confirm the unlock', {
+    this.add.text(GAME_WIDTH / 2, 118, 'Tap a locked corgi to review and confirm the unlock', {
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '18px', fontStyle: '800', color: '#ffffff',
+      fontSize: '17px', fontStyle: '800', color: '#ffffff',
       stroke: '#24304a', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(30);
 
     const cols = 2;
-    const cardW = 300, cardH = 326;
-    const gapX = 30, gapY = 24;
+    const sparsePage = CORGIS.length <= 2;
+    const cardW = sparsePage ? 315 : 300;
+    const cardH = sparsePage ? 420 : 288;
+    const gapX = sparsePage ? 26 : 30;
+    const gapY = sparsePage ? 0 : 16;
     const totalW = cols * cardW + (cols - 1) * gapX;
     const startX = (GAME_WIDTH - totalW) / 2 + cardW / 2;
-    const startY = 205;
+    const startY = sparsePage ? 430 : 278;
     CORGIS.forEach((corgi, index) => {
       const col = index % cols;
       const row = Math.floor(index / cols);
@@ -60,6 +63,7 @@ export class CorgiSelectScene extends Phaser.Scene {
     const owned = gameState.isCorgiOwned(id);
     const selected = gameState.selectedCorgi === id;
     const card = this.add.container(x, y).setDepth(25);
+    const largeCard = h >= 350;
 
     const g = this.add.graphics();
     g.fillStyle(0x18223a, 0.4);
@@ -71,16 +75,23 @@ export class CorgiSelectScene extends Phaser.Scene {
     card.add(g);
 
     const texture = this.textures.exists(def.texture) ? def.texture : 'corgi_idle';
-    const image = this.add.image(0, -48, texture)
-      .setDisplaySize(188, 188)
+    const textureFrame = (def as any).textureFrame;
+    const portraitSize = largeCard ? 270 : 172;
+    const imageY = largeCard ? -70 : -54;
+    const image = this.add.image(0, imageY, texture, textureFrame)
+      .setDisplaySize(portraitSize, portraitSize)
       .setAlpha(1)
       .setFlipX(false);
     if (def.tint) image.setTint(def.tint);
     card.add(image);
 
-    card.add(this.add.text(0, 62, def.name, {
+    const nameFontSize = def.name.length > 23 ? 17 : def.name.length > 19 ? 18 : 21;
+    const nameY = largeCard ? 100 : 58;
+    card.add(this.add.text(0, nameY, def.name, {
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: '21px', fontStyle: '900', color: '#24304a',
+      fontSize: `${nameFontSize}px`, fontStyle: '900', color: '#24304a',
+      align: 'center',
+      wordWrap: { width: w - 32 },
     }).setOrigin(0.5));
 
     const price = gameState.bonePriceFor(id);
@@ -95,7 +106,7 @@ export class CorgiSelectScene extends Phaser.Scene {
       actionLabel = `UNLOCK  ${price}`;
       color = 0xffb02f;
       shadow = 0xb26810;
-      card.add(this.add.text(0, 96, 'BONES', {
+      card.add(this.add.text(0, largeCard ? 134 : 86, 'BONES', {
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: '13px', fontStyle: '800', color: '#8a5000',
       }).setOrigin(0.5));
@@ -115,17 +126,17 @@ export class CorgiSelectScene extends Phaser.Scene {
     };
 
     new PolishedButton(this, {
-      x, y: y + 128, w: 224, h: 72,
+      x, y: y + h / 2 - 32, w: largeCard ? 246 : 224, h: 72,
       label: actionLabel,
       color, shadowColor: shadow,
       testId: `select-corgi-${id}-btn`,
-      fontSize: 19,
+      fontSize: largeCard ? 20 : 18,
       onTap: handleCardChoice,
     });
 
-    card.setSize(w, h - 62);
+    card.setSize(w, h);
     card.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h - 62),
+      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
       Phaser.Geom.Rectangle.Contains,
     );
     card.on('pointerup', handleCardChoice);
@@ -181,7 +192,8 @@ export class CorgiSelectScene extends Phaser.Scene {
 
     const def = CORGIS.find((corgi) => corgi.id === id)!;
     const previewKey = this.textures.exists(def.texture) ? def.texture : 'corgi_idle';
-    const preview = this.add.image(cx, cy - 130, previewKey)
+    const previewFrame = (def as any).textureFrame;
+    const preview = this.add.image(cx, cy - 130, previewKey, previewFrame)
       .setDisplaySize(200, 200)
       .setFlipX(false)
       .setDepth(92);
