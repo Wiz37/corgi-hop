@@ -10,8 +10,6 @@ interface NewCorgiDef {
   name: string;
   price: number;
   atlasFrame: number;
-  texture: string;
-  runSheetKey: string;
   runAnimKey: string;
 }
 
@@ -19,8 +17,10 @@ interface RuntimeCorgiDef {
   id: string;
   name: string;
   texture: string;
+  textureFrame?: number;
   runSheetKey?: string;
   runAnimKey?: string;
+  runFrame?: number;
   jumpFrame?: number;
   fallFrame?: number;
   landFrame?: number;
@@ -30,121 +30,50 @@ interface RuntimeCorgiDef {
 
 const FRAME = 192;
 const PAGE_SIZE = 6;
-const PACK_VERSION = '20260731a';
+const PACK_VERSION = '20260731b';
+const ATLAS_KEY = 'new_corgi_portraits_atlas';
 
 const NEW_CORGIS: NewCorgiDef[] = [
-  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, atlasFrame: 0, texture: 'corgi_blue_merle_chef', runSheetKey: 'blue_merle_chef_run', runAnimKey: 'blue_merle_chef_run' },
-  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, atlasFrame: 1, texture: 'corgi_black_tri_tuxedo', runSheetKey: 'black_tri_tuxedo_run', runAnimKey: 'black_tri_tuxedo_run' },
-  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, atlasFrame: 2, texture: 'corgi_red_tri_ninja', runSheetKey: 'red_tri_ninja_run', runAnimKey: 'red_tri_ninja_run' },
-  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, atlasFrame: 3, texture: 'corgi_sable_aviator', runSheetKey: 'sable_aviator_run', runAnimKey: 'sable_aviator_run' },
-  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, atlasFrame: 4, texture: 'corgi_brindle_viking', runSheetKey: 'brindle_viking_run', runAnimKey: 'brindle_viking_run' },
-  { id: 'heeler_lifeguard', name: 'Heeler Lifeguard Corgi', price: 4800, atlasFrame: 5, texture: 'corgi_heeler_lifeguard', runSheetKey: 'heeler_lifeguard_run', runAnimKey: 'heeler_lifeguard_run' },
-  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, atlasFrame: 6, texture: 'corgi_pilot_bob', runSheetKey: 'pilot_bob_run', runAnimKey: 'pilot_bob_run' },
-  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, atlasFrame: 7, texture: 'corgi_princess_lulu', runSheetKey: 'princess_lulu_run', runAnimKey: 'princess_lulu_run' },
-];
-
-const POSES = [
-  { sx: 1.00, sy: 0.96, angle: -1.4, dx: 0, dy: 4, shear: -0.015 },
-  { sx: 1.02, sy: 0.99, angle: -0.5, dx: 1, dy: 1, shear: 0.010 },
-  { sx: 1.00, sy: 1.03, angle: 0.6, dx: 2, dy: -2, shear: 0.018 },
-  { sx: 0.99, sy: 1.00, angle: 1.2, dx: 0, dy: 0, shear: -0.010 },
-  { sx: 1.00, sy: 0.96, angle: -1.0, dx: -1, dy: 4, shear: 0.015 },
-  { sx: 1.02, sy: 0.99, angle: -0.2, dx: -1, dy: 1, shear: -0.010 },
-  { sx: 1.00, sy: 1.03, angle: 0.8, dx: 0, dy: -2, shear: -0.018 },
-  { sx: 0.99, sy: 1.00, angle: 1.0, dx: 0, dy: 0, shear: 0.010 },
+  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, atlasFrame: 0, runAnimKey: 'blue_merle_chef_run' },
+  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, atlasFrame: 1, runAnimKey: 'black_tri_tuxedo_run' },
+  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, atlasFrame: 2, runAnimKey: 'red_tri_ninja_run' },
+  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, atlasFrame: 3, runAnimKey: 'sable_aviator_run' },
+  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, atlasFrame: 4, runAnimKey: 'brindle_viking_run' },
+  { id: 'heeler_lifeguard', name: 'Heeler Lifeguard Corgi', price: 4800, atlasFrame: 5, runAnimKey: 'heeler_lifeguard_run' },
+  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, atlasFrame: 6, runAnimKey: 'pilot_bob_run' },
+  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, atlasFrame: 7, runAnimKey: 'princess_lulu_run' },
 ];
 
 let installed = false;
 
-function buildCharacterTextures(scene: Phaser.Scene): void {
-  if (!scene.textures.exists('new_corgi_portraits_atlas')) return;
+function registerCharacterAnimations(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(ATLAS_KEY)) return;
 
-  const atlas = scene.textures.get('new_corgi_portraits_atlas');
   for (const def of NEW_CORGIS) {
-    const frame = atlas.get(def.atlasFrame);
-    const source = frame.source.image as CanvasImageSource;
-
-    if (!scene.textures.exists(def.texture)) {
-      const portrait = document.createElement('canvas');
-      portrait.width = FRAME;
-      portrait.height = FRAME;
-      const pctx = portrait.getContext('2d', { alpha: true });
-      if (pctx) {
-        pctx.clearRect(0, 0, FRAME, FRAME);
-        pctx.drawImage(
-          source,
-          frame.cutX,
-          frame.cutY,
-          frame.cutWidth,
-          frame.cutHeight,
-          0,
-          0,
-          FRAME,
-          FRAME,
-        );
-        scene.textures.addCanvas(def.texture, portrait);
-      }
-    }
-
-    if (!scene.textures.exists(def.runSheetKey)) {
-      const runCanvas = document.createElement('canvas');
-      runCanvas.width = FRAME * POSES.length;
-      runCanvas.height = FRAME;
-      const rctx = runCanvas.getContext('2d', { alpha: true });
-      if (rctx) {
-        rctx.clearRect(0, 0, runCanvas.width, runCanvas.height);
-        POSES.forEach((pose, index) => {
-          const cellX = index * FRAME;
-          rctx.save();
-          rctx.beginPath();
-          rctx.rect(cellX, 0, FRAME, FRAME);
-          rctx.clip();
-          rctx.translate(cellX + FRAME / 2 + pose.dx, FRAME - 4 + pose.dy);
-          rctx.rotate(Phaser.Math.DegToRad(pose.angle));
-          rctx.transform(pose.sx, pose.shear, 0, pose.sy, 0, 0);
-          rctx.drawImage(
-            source,
-            frame.cutX,
-            frame.cutY,
-            frame.cutWidth,
-            frame.cutHeight,
-            -FRAME / 2,
-            -FRAME + 4,
-            FRAME,
-            FRAME,
-          );
-          rctx.restore();
-        });
-
-        scene.textures.addSpriteSheet(def.runSheetKey, runCanvas, {
-          frameWidth: FRAME,
-          frameHeight: FRAME,
-          startFrame: 0,
-          endFrame: POSES.length - 1,
-        });
-      }
-    }
-
-    if (!scene.anims.exists(def.runAnimKey) && scene.textures.exists(def.runSheetKey)) {
-      scene.anims.create({
-        key: def.runAnimKey,
-        frames: scene.anims.generateFrameNumbers(def.runSheetKey, { start: 0, end: POSES.length - 1 }),
-        frameRate: 14,
-        repeat: -1,
-      });
-    }
+    if (scene.anims.exists(def.runAnimKey)) continue;
+    scene.anims.create({
+      key: def.runAnimKey,
+      frames: [{ key: ATLAS_KEY, frame: def.atlasFrame }],
+      frameRate: 1,
+      repeat: -1,
+    });
   }
 }
 
+function selectedNewCorgi(): NewCorgiDef | undefined {
+  return NEW_CORGIS.find((def) => def.id === (gameState as any).selectedCorgi);
+}
+
 /**
- * Installs eight approved illustrated characters while preserving the six
- * originals. Store portraits and gameplay frames are generated from one
- * bundled transparent atlas, so the selected outfit can never fall back to
- * Classic or disappear during a jump.
+ * Adds the approved illustrated corgis without generating or cutting textures
+ * at runtime. Store cards and gameplay both use frames directly from the
+ * bundled atlas. This avoids the iOS fallback that displayed Classic Corgi on
+ * every new card when runtime-created textures were unavailable.
  */
 export function installNewCorgiPack(
   PreloadSceneClass: SceneClass,
   CorgiSelectSceneClass: SceneClass,
+  GameSceneClass: SceneClass,
 ): void {
   if (installed) return;
   installed = true;
@@ -158,12 +87,14 @@ export function installNewCorgiPack(
       runtimeCorgis.push({
         id: def.id,
         name: def.name,
-        texture: def.texture,
-        runSheetKey: def.runSheetKey,
+        texture: ATLAS_KEY,
+        textureFrame: def.atlasFrame,
+        runSheetKey: ATLAS_KEY,
         runAnimKey: def.runAnimKey,
-        jumpFrame: 4,
-        fallFrame: 6,
-        landFrame: 0,
+        runFrame: def.atlasFrame,
+        jumpFrame: def.atlasFrame,
+        fallFrame: def.atlasFrame,
+        landFrame: def.atlasFrame,
         premium: true,
         entitlementProducts: ['com.corgihop.all_corgis'],
       });
@@ -193,7 +124,7 @@ export function installNewCorgiPack(
   preloadProto.preload = function preloadNewCorgis(this: Phaser.Scene): void {
     originalPreload.call(this);
     this.load.spritesheet(
-      'new_corgi_portraits_atlas',
+      ATLAS_KEY,
       `/assets/new_corgi_portraits.webp?v=${PACK_VERSION}`,
       { frameWidth: FRAME, frameHeight: FRAME },
     );
@@ -201,9 +132,30 @@ export function installNewCorgiPack(
 
   const originalPreloadCreate = preloadProto.create;
   preloadProto.create = function createNewCorgiAnimations(this: Phaser.Scene): void {
-    buildCharacterTextures(this);
+    registerCharacterAnimations(this);
     originalPreloadCreate.call(this);
   };
+
+  // GameScene assumes frame zero is the running frame. The new characters
+  // share one atlas, so force the selected character's own frame after any
+  // semantic pose swap. This preserves the complete outfit in the air and on
+  // landing instead of switching to another dog or a clipped generated frame.
+  const gameProto = GameSceneClass.prototype;
+  const originalSetPose = gameProto.setPose;
+  if (typeof originalSetPose === 'function') {
+    gameProto.setPose = function setNewCorgiPose(this: Phaser.Scene & Record<string, any>, logicalPose: string): void {
+      originalSetPose.call(this, logicalPose);
+      if (logicalPose === 'hit') return;
+      const def = selectedNewCorgi();
+      const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!def || !corgi || !this.textures.exists(ATLAS_KEY)) return;
+      corgi.setTexture(ATLAS_KEY, def.atlasFrame);
+      corgi.setAlpha(1);
+      corgi.setFlipX(false);
+      corgi.clearTint();
+      corgi.setBlendMode(Phaser.BlendModes.NORMAL);
+    };
+  }
 
   const selectProto = CorgiSelectSceneClass.prototype;
   const originalSelectCreate = selectProto.create;
@@ -223,14 +175,15 @@ export function installNewCorgiPack(
 
     runtimeCorgis.splice(0, runtimeCorgis.length, ...pageCorgis);
     try {
-      originalSelectCreate.call(this);
+      originalSelectCreate.call(this, data);
     } finally {
       runtimeCorgis.splice(0, runtimeCorgis.length, ...allCorgis);
     }
 
     if (pageCount <= 1) return;
 
-    this.add.text(360, 1141, `CORGIS ${page + 1}/${pageCount}`, {
+    const navY = pageCorgis.length <= 2 ? 1050 : 1100;
+    this.add.text(360, navY + 1, `CORGIS ${page + 1}/${pageCount}`, {
       fontFamily: 'system-ui, -apple-system, sans-serif',
       fontSize: '24px',
       fontStyle: '900',
@@ -242,7 +195,7 @@ export function installNewCorgiPack(
     if (page > 0) {
       new PolishedButton(this, {
         x: 145,
-        y: 1140,
+        y: navY,
         w: 90,
         h: 68,
         label: '<',
@@ -257,7 +210,7 @@ export function installNewCorgiPack(
     if (page < pageCount - 1) {
       new PolishedButton(this, {
         x: 575,
-        y: 1140,
+        y: navY,
         w: 90,
         h: 68,
         label: '>',
