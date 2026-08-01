@@ -11,7 +11,7 @@ import {
   PREMIUM_STORE_PORTRAITS_DATA_URI,
   PREMIUM_STORE_PORTRAIT_FRAME_COUNT,
   PREMIUM_STORE_PORTRAIT_FRAME_SIZE,
-} from '../assets/PremiumStorePortraits';
+} from '../assets/PremiumStorePortraitsFull';
 
 type SceneClass = { prototype: Record<string, any> };
 
