@@ -29,16 +29,17 @@ interface SmoothRow {
 }
 
 const SOURCE_ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
-const SMOOTH_ATLAS_KEY = 'corgi_smooth_8_run_20260801';
+const SMOOTH_ATLAS_KEY = 'corgi_smooth_8_run_20260801b';
 const SOURCE_FRAMES_PER_CORGI = 7;
 const RUN_FRAME_COUNT = 8;
 const SOURCE_RUN_FRAME_COUNT = 4;
 const FIRST_NEW_CORGI_ROW = 6;
 
-// The first six characters already ship with dedicated, high-resolution
+// The first six characters already ship with dedicated high-resolution
 // eight-frame sheets. These eight newer characters are expanded at preload
-// time from four key poses into an eight-frame cycle with four blended
-// in-betweens. This avoids a large, fragile embedded replacement asset.
+// time from four clean key poses into an eight-frame cadence. The added frames
+// use restrained position and squash/stretch adjustments rather than opacity
+// blending, so there are no ghosted paws or double outlines.
 const SMOOTH_ROWS: SmoothRow[] = [
   { id: 'blue_merle_chef', sourceRow: 6, smoothRow: 0, runAnimKey: 'blue_merle_chef_run' },
   { id: 'black_tri_tuxedo', sourceRow: 7, smoothRow: 1, runAnimKey: 'black_tri_tuxedo_run' },
@@ -67,31 +68,40 @@ function drawSourceFrame(
   sourceFrame: Phaser.Textures.Frame,
   destinationX: number,
   destinationY: number,
-  alpha: number,
+  xOffset: number,
   yOffset: number,
+  scaleX: number,
+  scaleY: number,
 ): void {
   if (!sourceFrame?.source?.image) return;
 
-  context.save();
-  context.globalAlpha = alpha;
+  const drawWidth = CORGI_GAMEPLAY_FRAME_SIZE * scaleX;
+  const drawHeight = CORGI_GAMEPLAY_FRAME_SIZE * scaleY;
+  const drawX = destinationX
+    + (CORGI_GAMEPLAY_FRAME_SIZE - drawWidth) / 2
+    + xOffset;
+  const drawY = destinationY
+    + (CORGI_GAMEPLAY_FRAME_SIZE - drawHeight) / 2
+    + yOffset;
+
   context.drawImage(
     sourceFrame.source.image as CanvasImageSource,
     sourceFrame.cutX,
     sourceFrame.cutY,
     sourceFrame.cutWidth,
     sourceFrame.cutHeight,
-    destinationX,
-    destinationY + yOffset,
-    CORGI_GAMEPLAY_FRAME_SIZE,
-    CORGI_GAMEPLAY_FRAME_SIZE,
+    drawX,
+    drawY,
+    drawWidth,
+    drawHeight,
   );
-  context.restore();
 }
 
 /**
- * Builds four true key poses plus four cross-dissolved in-between poses.
- * The one-pixel rise/fall curve gives the torso a restrained weight shift;
- * GameScene still controls the larger physics-safe stride bob.
+ * Builds eight clean cadence frames from four illustrated key poses. Each key
+ * pose is shown twice: once neutral and once with a tiny weight-transfer
+ * adjustment. This reads as a smoother stride at gameplay size without the
+ * blurry double limbs produced by cross-fading two drawings together.
  */
 function buildSmoothRunAtlas(scene: Phaser.Scene): boolean {
   if (scene.textures.exists(SMOOTH_ATLAS_KEY)) return true;
@@ -107,7 +117,11 @@ function buildSmoothRunAtlas(scene: Phaser.Scene): boolean {
   context.clearRect(0, 0, width, height);
 
   const sourceTexture = scene.textures.get(SOURCE_ATLAS_KEY);
-  const verticalOffsets = [0, -1, -2, -1, 0, -1, -2, -1];
+  const sourceIndexes = [0, 0, 1, 1, 2, 2, 3, 3];
+  const xOffsets = [0, 1, 0, -1, 0, 1, 0, -1];
+  const yOffsets = [0, -1, -2, -1, 0, -1, -2, -1];
+  const scaleX = [1, 1.012, 1, 0.99, 1, 1.012, 1, 0.99];
+  const scaleY = [1, 0.99, 1, 1.012, 1, 0.99, 1, 1.012];
 
   for (const row of SMOOTH_ROWS) {
     const sourceFrames = Array.from({ length: SOURCE_RUN_FRAME_COUNT }, (_, index) =>
@@ -117,37 +131,23 @@ function buildSmoothRunAtlas(scene: Phaser.Scene): boolean {
     for (let outputFrame = 0; outputFrame < RUN_FRAME_COUNT; outputFrame++) {
       const destinationX = outputFrame * CORGI_GAMEPLAY_FRAME_SIZE;
       const destinationY = row.smoothRow * CORGI_GAMEPLAY_FRAME_SIZE;
-      const keyIndex = Math.floor(outputFrame / 2);
-      const nextIndex = (keyIndex + 1) % SOURCE_RUN_FRAME_COUNT;
-      const yOffset = verticalOffsets[outputFrame];
+      context.clearRect(
+        destinationX,
+        destinationY,
+        CORGI_GAMEPLAY_FRAME_SIZE,
+        CORGI_GAMEPLAY_FRAME_SIZE,
+      );
 
-      if (outputFrame % 2 === 0) {
-        drawSourceFrame(
-          context,
-          sourceFrames[keyIndex],
-          destinationX,
-          destinationY,
-          1,
-          yOffset,
-        );
-      } else {
-        drawSourceFrame(
-          context,
-          sourceFrames[keyIndex],
-          destinationX,
-          destinationY,
-          0.55,
-          yOffset,
-        );
-        drawSourceFrame(
-          context,
-          sourceFrames[nextIndex],
-          destinationX,
-          destinationY,
-          0.45,
-          yOffset,
-        );
-      }
+      drawSourceFrame(
+        context,
+        sourceFrames[sourceIndexes[outputFrame]],
+        destinationX,
+        destinationY,
+        xOffsets[outputFrame],
+        yOffsets[outputFrame],
+        scaleX[outputFrame],
+        scaleY[outputFrame],
+      );
 
       smoothTexture.add(
         smoothBase(row.smoothRow) + outputFrame,
