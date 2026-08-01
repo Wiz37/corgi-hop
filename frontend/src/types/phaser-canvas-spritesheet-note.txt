@@ -1,1 +1,0 @@
-This file intentionally left as a no-op marker for the Phaser canvas spritesheet type bridge.
