@@ -32,7 +32,6 @@ const FRAMES_PER_CORGI = 7;
 const RUN_FRAME_COUNT = 4;
 const FIRST_NEW_CORGI_ROW = 6;
 
-// Atlas rows: four running frames, jump, fall, and land.
 const ATLAS_ROWS: AtlasRow[] = [
   { id: 'classic', row: 0, runAnimKey: 'run' },
   { id: 'starter', row: 1, runAnimKey: 'starter_run' },
@@ -52,6 +51,7 @@ const ATLAS_ROWS: AtlasRow[] = [
 
 const ROW_BY_ID = new Map(ATLAS_ROWS.map((entry) => [entry.id, entry]));
 let installed = false;
+let atlasReady = false;
 
 function firstFrame(row: number): number {
   return row * FRAMES_PER_CORGI;
@@ -66,14 +66,13 @@ function configureDefinitions(): void {
 
     const base = firstFrame(atlasRow.row);
 
-    // Keep the polished, high-resolution Page 1 portraits. Replace only the
-    // eight newer store portraits whose old square crops cut off the paws.
+    // Preserve the high-resolution Page 1 portraits. Only the eight newer
+    // store characters use the atlas portrait because their old paws were cut.
     if (atlasRow.row >= FIRST_NEW_CORGI_ROW) {
       definition.texture = ATLAS_KEY;
       definition.textureFrame = base;
     }
 
-    // All fourteen gameplay characters use the same seven-state atlas.
     definition.runFrame = base;
     definition.runSheetKey = ATLAS_KEY;
     definition.runAnimKey = atlasRow.runAnimKey;
@@ -84,10 +83,6 @@ function configureDefinitions(): void {
 }
 
 function registerAnimations(scene: Phaser.Scene): void {
-  if (!scene.textures.exists(ATLAS_KEY)) {
-    throw new Error('[Corgi Hop] The completed gameplay atlas did not load.');
-  }
-
   for (const atlasRow of ATLAS_ROWS) {
     if (scene.anims.exists(atlasRow.runAnimKey)) {
       scene.anims.remove(atlasRow.runAnimKey);
@@ -122,9 +117,12 @@ function frameForPose(atlasRow: AtlasRow, pose: Exclude<Pose, 'hit'>): number {
 }
 
 /**
- * Final source of truth for all fourteen gameplay characters and the eight
- * corrected newer store portraits. Installed last so older static-character
- * compatibility patches cannot overwrite these frames.
+ * Installs the completed gameplay atlas without being allowed to block startup.
+ *
+ * The legacy preload scene is allowed to finish first. Only after its textures,
+ * animations, fallbacks, and fade transition are established do we replace the
+ * corgi animations. If the atlas cannot be decoded on a device, the game keeps
+ * running with the previous assets instead of freezing at 100%.
  */
 export function installGameplayAnimation(
   PreloadSceneClass: SceneClass,
@@ -132,8 +130,6 @@ export function installGameplayAnimation(
 ): void {
   if (installed) return;
   installed = true;
-
-  configureDefinitions();
 
   const preloadPrototype = PreloadSceneClass.prototype;
   const previousPreload = preloadPrototype.preload;
@@ -149,9 +145,27 @@ export function installGameplayAnimation(
 
   const previousPreloadCreate = preloadPrototype.create;
   preloadPrototype.create = function createCompletedAnimations(this: Phaser.Scene): any {
-    // Register before older wrappers so their one-frame animations are skipped.
-    registerAnimations(this);
-    return previousPreloadCreate.call(this);
+    // Critical startup fix: finish every existing preload/create wrapper first.
+    // The original scene schedules the menu transition before we touch global
+    // animation keys, so this plugin can never trap the app on the 100% screen.
+    const result = previousPreloadCreate.call(this);
+    atlasReady = false;
+
+    if (!this.textures.exists(ATLAS_KEY)) {
+      console.error('[Corgi Hop] Gameplay atlas did not decode; using legacy corgi assets.');
+      return result;
+    }
+
+    try {
+      registerAnimations(this);
+      configureDefinitions();
+      atlasReady = true;
+    } catch (error) {
+      atlasReady = false;
+      console.error('[Corgi Hop] Gameplay atlas setup failed; using legacy corgi assets.', error);
+    }
+
+    return result;
   };
 
   const gamePrototype = GameSceneClass.prototype;
@@ -160,6 +174,10 @@ export function installGameplayAnimation(
     this: Phaser.Scene & Record<string, any>,
     ...args: any[]
   ): any {
+    if (!atlasReady || !this.textures.exists(ATLAS_KEY)) {
+      return previousGameCreate.apply(this, args);
+    }
+
     configureDefinitions();
     const atlasRow = selectedRow();
     const definitions = CORGIS as unknown as RuntimeCorgiDef[];
@@ -167,9 +185,9 @@ export function installGameplayAnimation(
       ? definitions.find((candidate) => candidate.id === atlasRow.id)
       : undefined;
 
-    // The older new-corgi wrapper still references its original eight-frame
-    // portrait sheet during create(). Give it a valid temporary 0-7 frame,
-    // then restore the completed atlas synchronously before anything renders.
+    // NewCorgiPack's older wrapper briefly reads the original eight-frame
+    // portrait sheet. Give it a safe legacy index, then restore the atlas frame
+    // synchronously before the first gameplay frame renders.
     const savedRunFrame = selectedDefinition?.runFrame;
     const savedTextureFrame = selectedDefinition?.textureFrame;
     if (selectedDefinition && atlasRow && atlasRow.row >= FIRST_NEW_CORGI_ROW) {
@@ -213,23 +231,13 @@ export function installGameplayAnimation(
   ): void {
     const atlasRow = selectedRow();
     const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
-    if (!atlasRow || !corgi || !this.textures.exists(ATLAS_KEY)) {
+    if (!atlasReady || !atlasRow || !corgi || !this.textures.exists(ATLAS_KEY)) {
       previousSetPose.call(this, pose);
       return;
     }
 
-    // Keep the approved dedicated BONK/crash artwork shared by all outfits.
     if (pose === 'hit') {
-      if (!this.textures.exists('corgi_hit')) {
-        previousSetPose.call(this, pose);
-        return;
-      }
-      corgi.setTexture('corgi_hit', 0);
-      if (typeof this.sizeCorgiUniform === 'function') this.sizeCorgiUniform();
-      corgi.setFlipX(false);
-      corgi.setAngle(0);
-      corgi.clearTint();
-      corgi.setAlpha(1);
+      previousSetPose.call(this, pose);
       return;
     }
 
