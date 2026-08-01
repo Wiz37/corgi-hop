@@ -62,10 +62,8 @@ function requirePremiumTexture(scene: Phaser.Scene): void {
   }
 }
 
-function requireStorePortraitTexture(scene: Phaser.Scene): void {
-  if (!scene.textures.exists(STORE_PORTRAIT_SHEET)) {
-    throw new Error('[Corgi Hop] Full-body premium store portraits failed to load.');
-  }
+function hasStorePortraitTexture(scene: Phaser.Scene): boolean {
+  return scene.textures.exists(STORE_PORTRAIT_SHEET);
 }
 
 function applyFullBodyStorePortraits(runtimeCorgis: RuntimeCorgiDef[]): void {
@@ -185,7 +183,8 @@ export function installNewCorgiPack(
   const originalPreloadCreate = preloadProto.create;
   preloadProto.create = function createNewCorgiAnimations(this: Phaser.Scene): void {
     registerAnimations(this);
-    requireStorePortraitTexture(this);
+    // Store portraits are optional at boot. A failed portrait decode must never
+    // prevent the loader from leaving 100% and entering the menu.
     originalPreloadCreate.call(this);
   };
 
@@ -196,8 +195,9 @@ export function installNewCorgiPack(
     data?: { characterPage?: number },
   ): void {
     requirePremiumTexture(this);
-    requireStorePortraitTexture(this);
-    applyFullBodyStorePortraits(runtimeCorgis);
+    if (hasStorePortraitTexture(this)) {
+      applyFullBodyStorePortraits(runtimeCorgis);
+    }
 
     const allCorgis = runtimeCorgis.slice();
     const pageCount = Math.max(1, Math.ceil(allCorgis.length / PAGE_SIZE));
