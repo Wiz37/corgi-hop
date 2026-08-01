@@ -2,16 +2,23 @@ import Phaser from 'phaser';
 import { CORGIS, CORGI_BONE_PRICE, gameState } from './GameState';
 import { storage, STORAGE_KEYS as K } from './Storage';
 import { PolishedButton } from '../ui/PolishedButton';
-import type { ExpansionDef } from './PremiumExpansionCatalog';
-import { buildPremiumPortrait, buildPremiumRun } from './PremiumExpansionArt';
 
 type SceneClass = { prototype: Record<string, any> };
-type NewCorgiDef = ExpansionDef;
+
+interface NewCorgiDef {
+  id: string;
+  name: string;
+  price: number;
+  portraitFrame: number;
+  runRow: number;
+  runAnimKey: string;
+}
 
 interface RuntimeCorgiDef {
   id: string;
   name: string;
   texture: string;
+  textureFrame?: number;
   runSheetKey?: string;
   runAnimKey?: string;
   jumpFrame?: number;
@@ -21,51 +28,61 @@ interface RuntimeCorgiDef {
   entitlementProducts: string[];
 }
 
+const PORTRAIT_FRAME = 160;
+const RUN_FRAME = 128;
+const FRAMES_PER_CORGI = 8;
 const PAGE_SIZE = 6;
+const PORTRAIT_SHEET = 'new_corgi_portraits_v2';
+const RUN_SHEET = 'new_corgi_runs_v2';
+const PACK_VERSION = '20260801c';
 
-/**
- * These definitions drive both the selector portrait and the full eight-frame
- * gameplay animation. Each character has its own coat and costume theme, so
- * no premium character can silently render as Classic Corgi.
- */
 const NEW_CORGIS: NewCorgiDef[] = [
-  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, coat: 'merle', theme: 'chef' },
-  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, coat: 'tricolor', theme: 'tuxedo' },
-  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, coat: 'tricolor', theme: 'ninja' },
-  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, coat: 'sable', theme: 'aviator' },
-  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, coat: 'brindle', theme: 'viking' },
-  { id: 'heeler_lifeguard', name: 'Blue Heeler Lifeguard Bob', price: 4800, coat: 'merle', theme: 'lifeguard' },
-  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, coat: 'orange', theme: 'aviator' },
-  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, coat: 'tricolor', theme: 'royal' },
+  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, portraitFrame: 0, runRow: 0, runAnimKey: 'blue_merle_chef_run' },
+  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, portraitFrame: 1, runRow: 1, runAnimKey: 'black_tri_tuxedo_run' },
+  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, portraitFrame: 2, runRow: 2, runAnimKey: 'red_tri_ninja_run' },
+  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, portraitFrame: 3, runRow: 3, runAnimKey: 'sable_aviator_run' },
+  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, portraitFrame: 4, runRow: 4, runAnimKey: 'brindle_viking_run' },
+  { id: 'heeler_lifeguard', name: 'Heeler Lifeguard Corgi', price: 4800, portraitFrame: 5, runRow: 5, runAnimKey: 'heeler_lifeguard_run' },
+  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, portraitFrame: 6, runRow: 6, runAnimKey: 'pilot_bob_run' },
+  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, portraitFrame: 7, runRow: 7, runAnimKey: 'princess_lulu_run' },
 ];
 
 let installed = false;
 
-function portraitKey(def: NewCorgiDef): string {
-  return `corgi_${def.id}`;
-}
+function registerAnimations(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(PORTRAIT_SHEET)) {
+    console.error('[Corgi Hop] Missing premium portrait sheet.');
+  }
+  if (!scene.textures.exists(RUN_SHEET)) {
+    console.error('[Corgi Hop] Missing premium gameplay sheet.');
+    return;
+  }
 
-function runKey(def: NewCorgiDef): string {
-  return `${def.id}_run`;
-}
-
-/**
- * Build native Phaser textures directly from the coat/costume definitions.
- * This is intentionally idempotent and is called from preload, the selector,
- * and gameplay so iOS can never fall back to the Classic dog because a
- * generated texture was missing from the cache.
- */
-function ensureCharacterArt(scene: Phaser.Scene): void {
   for (const def of NEW_CORGIS) {
-    buildPremiumPortrait(scene, def);
-    buildPremiumRun(scene, def, runKey(def));
+    if (scene.anims.exists(def.runAnimKey)) continue;
+    const start = def.runRow * FRAMES_PER_CORGI;
+    scene.anims.create({
+      key: def.runAnimKey,
+      frames: scene.anims.generateFrameNumbers(RUN_SHEET, {
+        start,
+        end: start + FRAMES_PER_CORGI - 1,
+      }),
+      frameRate: 14,
+      repeat: -1,
+    });
   }
 }
 
+/**
+ * Adds the eight approved illustrated corgis using two direct sprite sheets.
+ *
+ * Store cards use a real frame from the portrait sheet. Gameplay uses the
+ * matching row from the full-body run sheet. There is no generated outfit,
+ * no canvas extraction, and no Classic-Corgi art substitution.
+ */
 export function installNewCorgiPack(
   PreloadSceneClass: SceneClass,
   CorgiSelectSceneClass: SceneClass,
-  GameSceneClass: SceneClass,
 ): void {
   if (installed) return;
   installed = true;
@@ -75,27 +92,29 @@ export function installNewCorgiPack(
   const state = gameState as any;
 
   for (const def of NEW_CORGIS) {
-    if (!runtimeCorgis.some((corgi) => corgi.id === def.id)) {
-      runtimeCorgis.push({
-        id: def.id,
-        name: def.name,
-        texture: portraitKey(def),
-        runSheetKey: runKey(def),
-        runAnimKey: runKey(def),
-        jumpFrame: 2,
-        fallFrame: 6,
-        landFrame: 0,
-        premium: true,
-        entitlementProducts: ['com.corgihop.all_corgis'],
-      });
-    }
+    const start = def.runRow * FRAMES_PER_CORGI;
+    const runtimeDef: RuntimeCorgiDef = {
+      id: def.id,
+      name: def.name,
+      texture: PORTRAIT_SHEET,
+      textureFrame: def.portraitFrame,
+      runSheetKey: RUN_SHEET,
+      runAnimKey: def.runAnimKey,
+      jumpFrame: start + 3,
+      fallFrame: start + 5,
+      landFrame: start + 7,
+      premium: true,
+      entitlementProducts: ['com.corgihop.all_corgis'],
+    };
+
+    const existing = runtimeCorgis.find((corgi) => corgi.id === def.id);
+    if (existing) Object.assign(existing, runtimeDef);
+    else runtimeCorgis.push(runtimeDef);
 
     runtimePrices[def.id] = def.price;
     if (!(def.id in state.boneUnlocks)) state.boneUnlocks[def.id] = false;
   }
 
-  // GameState's original ID union only contains the launch characters.
-  // Preserve premium unlocks and the selected premium character across loads.
   const originalLoad = state.load.bind(state);
   state.load = (): void => {
     const selectedBeforeLoad = storage.getString(K.selectedCorgi, 'classic');
@@ -105,33 +124,33 @@ export function installNewCorgiPack(
     for (const def of NEW_CORGIS) {
       state.boneUnlocks[def.id] = !!unlocksBeforeLoad[def.id];
     }
-
     if (runtimeCorgis.some((corgi) => corgi.id === selectedBeforeLoad)) {
       state.selectedCorgi = selectedBeforeLoad;
     }
-
     state.saveBoneUnlocks();
     state.saveSelected();
   };
 
-  // Build every portrait and animated run sheet before leaving PreloadScene.
   const preloadProto = PreloadSceneClass.prototype;
-  const originalPreloadCreate = preloadProto.create;
-  preloadProto.create = function createNewCorgiArt(this: Phaser.Scene): void {
-    ensureCharacterArt(this);
-    originalPreloadCreate.call(this);
+  const originalPreload = preloadProto.preload;
+  preloadProto.preload = function preloadNewCorgis(this: Phaser.Scene): void {
+    originalPreload.call(this);
+    this.load.spritesheet(
+      PORTRAIT_SHEET,
+      `/assets/new_corgi_portraits_v2.webp?v=${PACK_VERSION}`,
+      { frameWidth: PORTRAIT_FRAME, frameHeight: PORTRAIT_FRAME, startFrame: 0, endFrame: 7 },
+    );
+    this.load.spritesheet(
+      RUN_SHEET,
+      `/assets/new_corgi_runs_v2.webp?v=${PACK_VERSION}`,
+      { frameWidth: RUN_FRAME, frameHeight: RUN_FRAME, startFrame: 0, endFrame: 63 },
+    );
   };
 
-  // Defensive iOS cache repair: rebuild missing character textures immediately
-  // before gameplay instead of allowing GameScene to substitute Classic Corgi.
-  const gameProto = GameSceneClass.prototype;
-  const originalGameCreate = gameProto.create;
-  gameProto.create = function createGameWithCorrectCorgi(
-    this: Phaser.Scene & Record<string, any>,
-    ...args: unknown[]
-  ): unknown {
-    ensureCharacterArt(this);
-    return originalGameCreate.apply(this, args);
+  const originalPreloadCreate = preloadProto.create;
+  preloadProto.create = function createNewCorgiAnimations(this: Phaser.Scene): void {
+    registerAnimations(this);
+    originalPreloadCreate.call(this);
   };
 
   const selectProto = CorgiSelectSceneClass.prototype;
@@ -140,10 +159,6 @@ export function installNewCorgiPack(
     this: Phaser.Scene & { scene: Phaser.Scenes.ScenePlugin },
     data?: { characterPage?: number },
   ): void {
-    // Repair selector textures before any card decides whether to use fallback
-    // artwork. This is the direct fix for every card showing Classic Corgi.
-    ensureCharacterArt(this);
-
     const allCorgis = runtimeCorgis.slice();
     const pageCount = Math.max(1, Math.ceil(allCorgis.length / PAGE_SIZE));
     const requestedPage = Number(data?.characterPage ?? 0);
@@ -156,15 +171,14 @@ export function installNewCorgiPack(
 
     runtimeCorgis.splice(0, runtimeCorgis.length, ...pageCorgis);
     try {
-      originalSelectCreate.call(this, data);
+      originalSelectCreate.call(this);
     } finally {
       runtimeCorgis.splice(0, runtimeCorgis.length, ...allCorgis);
     }
 
     if (pageCount <= 1) return;
 
-    const navY = pageCorgis.length <= 2 ? 1050 : 1100;
-    this.add.text(360, navY + 1, `CORGIS ${page + 1}/${pageCount}`, {
+    this.add.text(360, 1141, `CORGIS ${page + 1}/${pageCount}`, {
       fontFamily: 'system-ui, -apple-system, sans-serif',
       fontSize: '24px',
       fontStyle: '900',
@@ -176,7 +190,7 @@ export function installNewCorgiPack(
     if (page > 0) {
       new PolishedButton(this, {
         x: 145,
-        y: navY,
+        y: 1140,
         w: 90,
         h: 68,
         label: '<',
@@ -191,7 +205,7 @@ export function installNewCorgiPack(
     if (page < pageCount - 1) {
       new PolishedButton(this, {
         x: 575,
-        y: navY,
+        y: 1140,
         w: 90,
         h: 68,
         label: '>',
