@@ -12,6 +12,7 @@ import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
+import { installNewCorgiPack } from './game/systems/NewCorgiPackPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -27,6 +28,7 @@ export const GAME_HEIGHT = 1280;
 
 function boot() {
   installPirateTextureRepair(PreloadScene);
+  installNewCorgiPack(PreloadScene, CorgiSelectScene);
   installTripleTiming(GameScene);
   installFunGameplay(GameScene);
   installObstacleVariety(GameScene);
