@@ -28,21 +28,23 @@ interface FocusedCorgi {
   storeTextureKey: string;
 }
 
-const SHEET_KEY = 'bob_lulu_sheet_20260801';
+// Versioned keys prevent an older WebGL texture from being reused after an OTA
+// or TestFlight update.
+const SHEET_KEY = 'bob_lulu_sheet_20260801b';
 const RUN_FRAME_COUNT = 4;
-const STORE_PADDING = 10;
+const STORE_PADDING = 18;
 const FOCUSED_CORGIS: FocusedCorgi[] = [
   {
     id: 'pilot_bob',
     baseFrame: 0,
-    runAnimKey: 'pilot_bob_run_20260801',
-    storeTextureKey: 'pilot_bob_store_isolated_20260801',
+    runAnimKey: 'pilot_bob_run_20260801b',
+    storeTextureKey: 'pilot_bob_store_isolated_20260801b',
   },
   {
     id: 'princess_lulu',
     baseFrame: 7,
-    runAnimKey: 'princess_lulu_run_20260801',
-    storeTextureKey: 'princess_lulu_store_isolated_20260801',
+    runAnimKey: 'princess_lulu_run_20260801b',
+    storeTextureKey: 'princess_lulu_store_isolated_20260801b',
   },
 ];
 const BY_ID = new Map(FOCUSED_CORGIS.map((entry) => [entry.id, entry]));
@@ -55,12 +57,9 @@ function selectedFocusedCorgi(): FocusedCorgi | undefined {
 }
 
 /**
- * Copy one exact spritesheet frame into a padded standalone CanvasTexture.
- *
- * The store enlarges portraits to roughly 270 px. Sampling a tightly packed
- * spritesheet frame at that size caused WebGL filtering to pull pixels from the
- * neighboring animation cells. A standalone padded texture gives the GPU no
- * adjacent frames to bleed into the portrait.
+ * Copies exactly one gameplay frame into a standalone, padded CanvasTexture.
+ * The store never samples directly from the tightly packed animation sheet,
+ * preventing neighboring frames and horizontal lines from bleeding into cards.
  */
 function createIsolatedStoreTexture(
   scene: Phaser.Scene,
@@ -70,8 +69,7 @@ function createIsolatedStoreTexture(
   if (scene.textures.exists(textureKey)) return true;
   if (!scene.textures.exists(SHEET_KEY)) return false;
 
-  const sourceTexture = scene.textures.get(SHEET_KEY);
-  const sourceFrame = sourceTexture.get(sourceFrameIndex);
+  const sourceFrame = scene.textures.get(SHEET_KEY).get(sourceFrameIndex);
   if (!sourceFrame?.source?.image) return false;
 
   const width = sourceFrame.cutWidth + STORE_PADDING * 2;
@@ -80,6 +78,7 @@ function createIsolatedStoreTexture(
   if (!isolated) return false;
 
   const context = isolated.getContext();
+  context.imageSmoothingEnabled = true;
   context.clearRect(0, 0, width, height);
   context.drawImage(
     sourceFrame.source.image as CanvasImageSource,
@@ -96,6 +95,12 @@ function createIsolatedStoreTexture(
   return true;
 }
 
+function prepareStorePortraits(scene: Phaser.Scene): boolean {
+  return FOCUSED_CORGIS.every((focused) =>
+    createIsolatedStoreTexture(scene, focused.storeTextureKey, focused.baseFrame),
+  );
+}
+
 function configureDefinitions(): void {
   const definitions = CORGIS as unknown as RuntimeCorgiDef[];
 
@@ -103,11 +108,11 @@ function configureDefinitions(): void {
     const definition = definitions.find((candidate) => candidate.id === focused.id);
     if (!definition) continue;
 
-    // Store portrait: isolated padded texture, never a raw spritesheet frame.
+    // Store uses an isolated texture, never a spritesheet frame.
     definition.texture = focused.storeTextureKey;
-    delete definition.textureFrame;
+    definition.textureFrame = 0;
 
-    // Gameplay: keep Bob and Lulu on their dedicated seven-state sheet.
+    // Gameplay keeps the dedicated seven-state Bob/Lulu sheet.
     definition.runFrame = focused.baseFrame;
     definition.runSheetKey = SHEET_KEY;
     definition.runAnimKey = focused.runAnimKey;
@@ -157,6 +162,7 @@ function applyVisualState(scene: Phaser.Scene & Record<string, any>, frame: numb
 /** Focused replacement for only Pilot Bob and Princess Lulu. */
 export function installBobLuluUpdate(
   PreloadSceneClass: SceneClass,
+  CorgiSelectSceneClass: SceneClass,
   GameSceneClass: SceneClass,
 ): void {
   if (installed) return;
@@ -176,7 +182,7 @@ export function installBobLuluUpdate(
 
   const previousPreloadCreate = preloadPrototype.create;
   preloadPrototype.create = function createBobAndLulu(this: Phaser.Scene): any {
-    // Always let the original preload chain finish and schedule the menu first.
+    // Finish the original preload chain and menu transition first.
     const result = previousPreloadCreate.call(this);
     ready = false;
 
@@ -186,10 +192,7 @@ export function installBobLuluUpdate(
     }
 
     try {
-      const portraitsReady = FOCUSED_CORGIS.every((focused) =>
-        createIsolatedStoreTexture(this, focused.storeTextureKey, focused.baseFrame),
-      );
-      if (!portraitsReady) {
+      if (!prepareStorePortraits(this)) {
         console.error('[Corgi Hop] Bob/Lulu isolated store portraits were not created.');
         return result;
       }
@@ -202,6 +205,21 @@ export function installBobLuluUpdate(
     }
 
     return result;
+  };
+
+  // Re-assert the isolated portrait definitions immediately before every store
+  // render. This prevents an older compatibility plugin or scene restart from
+  // restoring the raw spritesheet frames.
+  const selectPrototype = CorgiSelectSceneClass.prototype;
+  const previousSelectCreate = selectPrototype.create;
+  selectPrototype.create = function createStoreWithCleanBobLulu(
+    this: Phaser.Scene & Record<string, any>,
+    ...args: any[]
+  ): any {
+    if (this.textures.exists(SHEET_KEY) && prepareStorePortraits(this)) {
+      configureDefinitions();
+    }
+    return previousSelectCreate.apply(this, args);
   };
 
   const gamePrototype = GameSceneClass.prototype;
