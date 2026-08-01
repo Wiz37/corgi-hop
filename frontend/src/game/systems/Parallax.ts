@@ -1,5 +1,6 @@
 // Shared parallax background system with FULL illustrated countryside scene:
 //   - blue sky gradient
+//   - sunny cartoon sky treatment
 //   - two cloud layers (near + far)
 //   - distant mountain silhouettes
 //   - rolling hills with white fence
@@ -35,6 +36,43 @@ const GRASS_Y = 1000;
 const PATH_Y = 970;
 const FG_Y = 1170;
 
+/**
+ * Draws one clean cartoon sun shared by the home screen and gameplay.
+ * It sits behind both cloud layers so clouds can naturally pass in front of it.
+ */
+function addCartoonSun(scene: Phaser.Scene): void {
+  const x = GAME_WIDTH - 145;
+  const y = 145;
+  const radius = 54;
+  const sun = scene.add.graphics().setDepth(0.5).setName('sunny-sky-sun');
+
+  // Soft glow rings.
+  sun.fillStyle(0xfff3a6, 0.18);
+  sun.fillCircle(x, y, radius + 38);
+  sun.fillStyle(0xffe36a, 0.22);
+  sun.fillCircle(x, y, radius + 20);
+
+  // Rounded rays matching the game's bold outlined cartoon style.
+  sun.lineStyle(10, 0xffc928, 0.95);
+  for (let index = 0; index < 12; index++) {
+    const angle = (Math.PI * 2 * index) / 12;
+    const inner = radius + 13;
+    const outer = radius + 32;
+    sun.beginPath();
+    sun.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner);
+    sun.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+    sun.strokePath();
+  }
+
+  // Main disc, outline, and highlight.
+  sun.fillStyle(0xffd43b, 1);
+  sun.fillCircle(x, y, radius);
+  sun.lineStyle(5, 0xf0a91f, 1);
+  sun.strokeCircle(x, y, radius);
+  sun.fillStyle(0xffffbd, 0.52);
+  sun.fillCircle(x - 18, y - 18, 20);
+}
+
 export function buildParallax(scene: Phaser.Scene): ParallaxLayers {
   // Sky gradient built from two stacked rectangles (fast + clean).
   const skyTop = scene.add.rectangle(GAME_WIDTH / 2, 200, GAME_WIDTH, 400, 0x3fa7ff).setDepth(0);
@@ -43,6 +81,8 @@ export function buildParallax(scene: Phaser.Scene): ParallaxLayers {
   const gradient = scene.add.graphics().setDepth(0);
   gradient.fillGradientStyle(0x3fa7ff, 0x3fa7ff, 0xd8efff, 0xd8efff, 1, 1, 1, 1);
   gradient.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.62);
+
+  addCartoonSun(scene);
 
   const cloudsFar = scene.add.tileSprite(GAME_WIDTH / 2, CLOUDS_FAR_Y, GAME_WIDTH, 220, 'bg_clouds');
   cloudsFar.setDepth(1);
