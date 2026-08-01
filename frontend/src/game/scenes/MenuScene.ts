@@ -9,7 +9,7 @@ import { drawCompactTrophy, drawCompactBones } from '@/game/ui/PolishedHUD';
  * MenuScene — polished illustrated countryside title screen.
  *
  * Composition:
- *   - Full parallax scene (sky → clouds → mountains → hills → grass → path → foliage)
+ *   - Full sunny parallax scene (sky → sun → clouds → mountains → hills → grass → path → foliage)
  *   - Trees anchored to both sides of the ground, bushes + rocks + flowers
  *     scattered along the horizon
  *   - Big animated CORGI HOP logo (real texture) centred at the top
@@ -142,37 +142,6 @@ export class MenuScene extends Phaser.Scene {
       fontSize: '22px', fontStyle: '800', color: '#ffffff',
       stroke: '#24304a', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(30);
-
-    // ---- Rain overlay ----
-    // The only motion allowed alongside the dog is a light rain particle
-    // effect that falls across the whole scene.
-    this.buildRain();
-  }
-
-  /** Rain particle emitter — vertical thin white streaks falling top → bottom. */
-  private buildRain(): void {
-    const key = 'menu_rain_drop';
-    if (!this.textures.exists(key)) {
-      const g = this.make.graphics({ x: 0, y: 0 }, false);
-      g.fillStyle(0xffffff, 1);
-      g.fillRoundedRect(0, 0, 4, 22, 2);
-      g.generateTexture(key, 4, 22);
-      g.destroy();
-    }
-    this.add.particles(0, -40, key, {
-      x: { min: -20, max: GAME_WIDTH + 20 },
-      y: -40,
-      lifespan: 1500,
-      speedY: { min: 900, max: 1200 },
-      speedX: { min: -20, max: 20 },
-      angle: 100,
-      alpha: { start: 0.35, end: 0 },
-      scaleX: { min: 0.4, max: 0.8 },
-      scaleY: { min: 0.7, max: 1.3 },
-      frequency: 40,
-      quantity: 2,
-      blendMode: Phaser.BlendModes.NORMAL,
-    }).setDepth(45);
   }
 
   // NOTE: no `update()` on MenuScene — the title is a static illustrated
