@@ -2,6 +2,11 @@ import Phaser from 'phaser';
 import { CORGIS, CORGI_BONE_PRICE, gameState } from './GameState';
 import { storage, STORAGE_KEYS as K } from './Storage';
 import { PolishedButton } from '../ui/PolishedButton';
+import {
+  NEW_CORGI_ART_DATA_URI,
+  NEW_CORGI_ART_FRAME_COUNT,
+  NEW_CORGI_ART_FRAME_SIZE,
+} from '../assets/NewCorgiArt';
 
 type SceneClass = { prototype: Record<string, any> };
 
@@ -9,8 +14,7 @@ interface NewCorgiDef {
   id: string;
   name: string;
   price: number;
-  portraitFrame: number;
-  runRow: number;
+  frame: number;
   runAnimKey: string;
 }
 
@@ -19,6 +23,7 @@ interface RuntimeCorgiDef {
   name: string;
   texture: string;
   textureFrame?: number;
+  runFrame?: number;
   runSheetKey?: string;
   runAnimKey?: string;
   jumpFrame?: number;
@@ -28,61 +33,59 @@ interface RuntimeCorgiDef {
   entitlementProducts: string[];
 }
 
-const PORTRAIT_FRAME = 160;
-const RUN_FRAME = 128;
-const FRAMES_PER_CORGI = 8;
 const PAGE_SIZE = 6;
-const PORTRAIT_SHEET = 'new_corgi_portraits_v2';
-const RUN_SHEET = 'new_corgi_runs_v2';
-const PACK_VERSION = '20260801c';
+const CHARACTER_SHEET = 'approved_premium_corgis_20260801';
 
 const NEW_CORGIS: NewCorgiDef[] = [
-  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, portraitFrame: 0, runRow: 0, runAnimKey: 'blue_merle_chef_run' },
-  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, portraitFrame: 1, runRow: 1, runAnimKey: 'black_tri_tuxedo_run' },
-  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, portraitFrame: 2, runRow: 2, runAnimKey: 'red_tri_ninja_run' },
-  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, portraitFrame: 3, runRow: 3, runAnimKey: 'sable_aviator_run' },
-  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, portraitFrame: 4, runRow: 4, runAnimKey: 'brindle_viking_run' },
-  { id: 'heeler_lifeguard', name: 'Heeler Lifeguard Corgi', price: 4800, portraitFrame: 5, runRow: 5, runAnimKey: 'heeler_lifeguard_run' },
-  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, portraitFrame: 6, runRow: 6, runAnimKey: 'pilot_bob_run' },
-  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, portraitFrame: 7, runRow: 7, runAnimKey: 'princess_lulu_run' },
+  { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, frame: 0, runAnimKey: 'blue_merle_chef_run' },
+  { id: 'black_tri_tuxedo', name: 'Black Tri Tuxedo Corgi', price: 3200, frame: 1, runAnimKey: 'black_tri_tuxedo_run' },
+  { id: 'red_tri_ninja', name: 'Red Tri Ninja Corgi', price: 3600, frame: 2, runAnimKey: 'red_tri_ninja_run' },
+  { id: 'sable_aviator', name: 'Sable Aviator Corgi', price: 4000, frame: 3, runAnimKey: 'sable_aviator_run' },
+  { id: 'brindle_viking', name: 'Brindle Viking Cardigan', price: 4400, frame: 4, runAnimKey: 'brindle_viking_run' },
+  { id: 'heeler_lifeguard', name: 'Heeler Lifeguard Corgi', price: 4800, frame: 5, runAnimKey: 'heeler_lifeguard_run' },
+  { id: 'pilot_bob', name: 'Pilot Bob', price: 5200, frame: 6, runAnimKey: 'pilot_bob_run' },
+  { id: 'princess_lulu', name: 'Princess Lulu', price: 5600, frame: 7, runAnimKey: 'princess_lulu_run' },
 ];
 
+const NEW_CORGI_IDS = new Set(NEW_CORGIS.map((def) => def.id));
 let installed = false;
 
+function requirePremiumTexture(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(CHARACTER_SHEET)) {
+    throw new Error('[Corgi Hop] Approved premium corgi artwork failed to load. Refusing to substitute the Classic Corgi.');
+  }
+}
+
 function registerAnimations(scene: Phaser.Scene): void {
-  if (!scene.textures.exists(PORTRAIT_SHEET)) {
-    console.error('[Corgi Hop] Missing premium portrait sheet.');
-  }
-  if (!scene.textures.exists(RUN_SHEET)) {
-    console.error('[Corgi Hop] Missing premium gameplay sheet.');
-    return;
-  }
+  requirePremiumTexture(scene);
 
   for (const def of NEW_CORGIS) {
     if (scene.anims.exists(def.runAnimKey)) continue;
-    const start = def.runRow * FRAMES_PER_CORGI;
     scene.anims.create({
       key: def.runAnimKey,
-      frames: scene.anims.generateFrameNumbers(RUN_SHEET, {
-        start,
-        end: start + FRAMES_PER_CORGI - 1,
-      }),
-      frameRate: 14,
+      frames: [{ key: CHARACTER_SHEET, frame: def.frame }],
+      frameRate: 1,
       repeat: -1,
     });
   }
 }
 
+function selectedPremium(runtimeCorgis: RuntimeCorgiDef[]): RuntimeCorgiDef | undefined {
+  const selectedId = String((gameState as any).selectedCorgi ?? 'classic');
+  if (!NEW_CORGI_IDS.has(selectedId)) return undefined;
+  return runtimeCorgis.find((corgi) => corgi.id === selectedId);
+}
+
 /**
- * Adds the eight approved illustrated corgis using two direct sprite sheets.
+ * Installs the eight approved illustrated corgis.
  *
- * Store cards use a real frame from the portrait sheet. Gameplay uses the
- * matching row from the full-body run sheet. There is no generated outfit,
- * no canvas extraction, and no Classic-Corgi art substitution.
+ * The store and gameplay both use the same verified, bundled sprite sheet.
+ * Premium characters never silently fall back to Classic Corgi artwork.
  */
 export function installNewCorgiPack(
   PreloadSceneClass: SceneClass,
   CorgiSelectSceneClass: SceneClass,
+  GameSceneClass: SceneClass,
 ): void {
   if (installed) return;
   installed = true;
@@ -92,17 +95,17 @@ export function installNewCorgiPack(
   const state = gameState as any;
 
   for (const def of NEW_CORGIS) {
-    const start = def.runRow * FRAMES_PER_CORGI;
     const runtimeDef: RuntimeCorgiDef = {
       id: def.id,
       name: def.name,
-      texture: PORTRAIT_SHEET,
-      textureFrame: def.portraitFrame,
-      runSheetKey: RUN_SHEET,
+      texture: CHARACTER_SHEET,
+      textureFrame: def.frame,
+      runFrame: def.frame,
+      runSheetKey: CHARACTER_SHEET,
       runAnimKey: def.runAnimKey,
-      jumpFrame: start + 3,
-      fallFrame: start + 5,
-      landFrame: start + 7,
+      jumpFrame: def.frame,
+      fallFrame: def.frame,
+      landFrame: def.frame,
       premium: true,
       entitlementProducts: ['com.corgihop.all_corgis'],
     };
@@ -136,14 +139,14 @@ export function installNewCorgiPack(
   preloadProto.preload = function preloadNewCorgis(this: Phaser.Scene): void {
     originalPreload.call(this);
     this.load.spritesheet(
-      PORTRAIT_SHEET,
-      `/assets/new_corgi_portraits_v2.webp?v=${PACK_VERSION}`,
-      { frameWidth: PORTRAIT_FRAME, frameHeight: PORTRAIT_FRAME, startFrame: 0, endFrame: 7 },
-    );
-    this.load.spritesheet(
-      RUN_SHEET,
-      `/assets/new_corgi_runs_v2.webp?v=${PACK_VERSION}`,
-      { frameWidth: RUN_FRAME, frameHeight: RUN_FRAME, startFrame: 0, endFrame: 63 },
+      CHARACTER_SHEET,
+      NEW_CORGI_ART_DATA_URI,
+      {
+        frameWidth: NEW_CORGI_ART_FRAME_SIZE,
+        frameHeight: NEW_CORGI_ART_FRAME_SIZE,
+        startFrame: 0,
+        endFrame: NEW_CORGI_ART_FRAME_COUNT - 1,
+      },
     );
   };
 
@@ -159,6 +162,8 @@ export function installNewCorgiPack(
     this: Phaser.Scene & { scene: Phaser.Scenes.ScenePlugin },
     data?: { characterPage?: number },
   ): void {
+    requirePremiumTexture(this);
+
     const allCorgis = runtimeCorgis.slice();
     const pageCount = Math.max(1, Math.ceil(allCorgis.length / PAGE_SIZE));
     const requestedPage = Number(data?.characterPage ?? 0);
@@ -217,4 +222,53 @@ export function installNewCorgiPack(
       });
     }
   };
+
+  const gameProto = GameSceneClass.prototype;
+  const originalGameCreate = gameProto.create;
+  gameProto.create = function createWithApprovedCorgiArt(this: Phaser.Scene & Record<string, any>, ...args: any[]): any {
+    const result = originalGameCreate.apply(this, args);
+    const selected = selectedPremium(runtimeCorgis);
+    if (!selected) return result;
+
+    requirePremiumTexture(this);
+    const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
+    if (!corgi) throw new Error('[Corgi Hop] Gameplay corgi sprite was not created.');
+
+    const frame = selected.runFrame ?? selected.textureFrame ?? 0;
+    corgi.setTexture(CHARACTER_SHEET, frame);
+    corgi.setFlipX(false);
+    corgi.setAngle(0);
+    corgi.clearTint();
+    if (selected.runAnimKey && this.anims.exists(selected.runAnimKey)) {
+      corgi.play(selected.runAnimKey);
+    }
+    return result;
+  };
+
+  const originalSetPose = gameProto.setPose;
+  if (typeof originalSetPose === 'function') {
+    gameProto.setPose = function setApprovedPremiumPose(
+      this: Phaser.Scene & Record<string, any>,
+      logicalPose: 'run' | 'jump' | 'fall' | 'land' | 'hit',
+    ): void {
+      const selected = selectedPremium(runtimeCorgis);
+      if (!selected) {
+        originalSetPose.call(this, logicalPose);
+        return;
+      }
+
+      requirePremiumTexture(this);
+      const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!corgi) return;
+
+      const frame = selected.runFrame ?? selected.textureFrame ?? 0;
+      const currentFrame = Number(corgi.frame?.name);
+      if (corgi.texture.key !== CHARACTER_SHEET || currentFrame !== frame) {
+        corgi.setTexture(CHARACTER_SHEET, frame);
+      }
+      corgi.setFlipX(false);
+      corgi.setAngle(0);
+      corgi.clearTint();
+    };
+  }
 }
