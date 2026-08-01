@@ -118,6 +118,7 @@ function frameForPose(atlasRow: AtlasRow, pose: Exclude<Pose, 'hit'>): number {
     case 'fall': return base + 5;
     case 'land': return base + 6;
   }
+  return base;
 }
 
 /**
