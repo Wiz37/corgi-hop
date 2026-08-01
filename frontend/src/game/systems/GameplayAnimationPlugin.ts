@@ -1,1 +1,1 @@
-// placeholder removed in next commit
+// This file is replaced by the completed gameplay atlas integration.
