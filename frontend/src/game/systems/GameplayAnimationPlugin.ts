@@ -161,7 +161,7 @@ function buildSmoothRunAtlas(scene: Phaser.Scene): boolean {
   }
 
   smoothTexture.refresh();
-  scene.textures.get(SMOOTH_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+  smoothTexture.source[0]?.setFilter(Phaser.Textures.FilterMode.LINEAR);
   return true;
 }
 
