@@ -8,6 +8,7 @@ import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
+import { installLevel70Difficulty } from './game/systems/Level70DifficultyPlugin';
 import { installBonkEyes } from './game/systems/BonkEyesPlugin';
 import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
@@ -36,6 +37,9 @@ function boot() {
   installObstacleVariety(GameScene);
   installVariableJump(GameScene, HUDScene);
   installHardSafeBalance(GameScene);
+  // Owns the final score-based pattern and speed progression. Installed after
+  // older balance wrappers so doubles begin at 5 and safe triples begin at 30.
+  installLevel70Difficulty(GameScene);
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
