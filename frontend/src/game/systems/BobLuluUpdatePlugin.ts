@@ -25,13 +25,25 @@ interface FocusedCorgi {
   id: 'pilot_bob' | 'princess_lulu';
   baseFrame: number;
   runAnimKey: string;
+  storeTextureKey: string;
 }
 
 const SHEET_KEY = 'bob_lulu_sheet_20260801';
 const RUN_FRAME_COUNT = 4;
+const STORE_PADDING = 10;
 const FOCUSED_CORGIS: FocusedCorgi[] = [
-  { id: 'pilot_bob', baseFrame: 0, runAnimKey: 'pilot_bob_run_20260801' },
-  { id: 'princess_lulu', baseFrame: 7, runAnimKey: 'princess_lulu_run_20260801' },
+  {
+    id: 'pilot_bob',
+    baseFrame: 0,
+    runAnimKey: 'pilot_bob_run_20260801',
+    storeTextureKey: 'pilot_bob_store_isolated_20260801',
+  },
+  {
+    id: 'princess_lulu',
+    baseFrame: 7,
+    runAnimKey: 'princess_lulu_run_20260801',
+    storeTextureKey: 'princess_lulu_store_isolated_20260801',
+  },
 ];
 const BY_ID = new Map(FOCUSED_CORGIS.map((entry) => [entry.id, entry]));
 
@@ -42,6 +54,48 @@ function selectedFocusedCorgi(): FocusedCorgi | undefined {
   return BY_ID.get(String((gameState as any).selectedCorgi) as FocusedCorgi['id']);
 }
 
+/**
+ * Copy one exact spritesheet frame into a padded standalone CanvasTexture.
+ *
+ * The store enlarges portraits to roughly 270 px. Sampling a tightly packed
+ * spritesheet frame at that size caused WebGL filtering to pull pixels from the
+ * neighboring animation cells. A standalone padded texture gives the GPU no
+ * adjacent frames to bleed into the portrait.
+ */
+function createIsolatedStoreTexture(
+  scene: Phaser.Scene,
+  textureKey: string,
+  sourceFrameIndex: number,
+): boolean {
+  if (scene.textures.exists(textureKey)) return true;
+  if (!scene.textures.exists(SHEET_KEY)) return false;
+
+  const sourceTexture = scene.textures.get(SHEET_KEY);
+  const sourceFrame = sourceTexture.get(sourceFrameIndex);
+  if (!sourceFrame?.source?.image) return false;
+
+  const width = sourceFrame.cutWidth + STORE_PADDING * 2;
+  const height = sourceFrame.cutHeight + STORE_PADDING * 2;
+  const isolated = scene.textures.createCanvas(textureKey, width, height);
+  if (!isolated) return false;
+
+  const context = isolated.getContext();
+  context.clearRect(0, 0, width, height);
+  context.drawImage(
+    sourceFrame.source.image as CanvasImageSource,
+    sourceFrame.cutX,
+    sourceFrame.cutY,
+    sourceFrame.cutWidth,
+    sourceFrame.cutHeight,
+    STORE_PADDING,
+    STORE_PADDING,
+    sourceFrame.cutWidth,
+    sourceFrame.cutHeight,
+  );
+  isolated.refresh();
+  return true;
+}
+
 function configureDefinitions(): void {
   const definitions = CORGIS as unknown as RuntimeCorgiDef[];
 
@@ -49,17 +103,17 @@ function configureDefinitions(): void {
     const definition = definitions.find((candidate) => candidate.id === focused.id);
     if (!definition) continue;
 
-    Object.assign(definition, {
-      // The selection store uses the same full-body cartoon frame as gameplay.
-      texture: SHEET_KEY,
-      textureFrame: focused.baseFrame,
-      runFrame: focused.baseFrame,
-      runSheetKey: SHEET_KEY,
-      runAnimKey: focused.runAnimKey,
-      jumpFrame: focused.baseFrame + 4,
-      fallFrame: focused.baseFrame + 5,
-      landFrame: focused.baseFrame + 6,
-    });
+    // Store portrait: isolated padded texture, never a raw spritesheet frame.
+    definition.texture = focused.storeTextureKey;
+    delete definition.textureFrame;
+
+    // Gameplay: keep Bob and Lulu on their dedicated seven-state sheet.
+    definition.runFrame = focused.baseFrame;
+    definition.runSheetKey = SHEET_KEY;
+    definition.runAnimKey = focused.runAnimKey;
+    definition.jumpFrame = focused.baseFrame + 4;
+    definition.fallFrame = focused.baseFrame + 5;
+    definition.landFrame = focused.baseFrame + 6;
   }
 }
 
@@ -100,13 +154,7 @@ function applyVisualState(scene: Phaser.Scene & Record<string, any>, frame: numb
   corgi.setBlendMode(Phaser.BlendModes.NORMAL);
 }
 
-/**
- * Focused replacement for only Pilot Bob and Princess Lulu.
- *
- * Existing characters and existing gameplay systems are left untouched. The
- * original preload/create chain always completes first so this optional art
- * cannot trap the application on the loading screen.
- */
+/** Focused replacement for only Pilot Bob and Princess Lulu. */
 export function installBobLuluUpdate(
   PreloadSceneClass: SceneClass,
   GameSceneClass: SceneClass,
@@ -128,6 +176,7 @@ export function installBobLuluUpdate(
 
   const previousPreloadCreate = preloadPrototype.create;
   preloadPrototype.create = function createBobAndLulu(this: Phaser.Scene): any {
+    // Always let the original preload chain finish and schedule the menu first.
     const result = previousPreloadCreate.call(this);
     ready = false;
 
@@ -137,6 +186,14 @@ export function installBobLuluUpdate(
     }
 
     try {
+      const portraitsReady = FOCUSED_CORGIS.every((focused) =>
+        createIsolatedStoreTexture(this, focused.storeTextureKey, focused.baseFrame),
+      );
+      if (!portraitsReady) {
+        console.error('[Corgi Hop] Bob/Lulu isolated store portraits were not created.');
+        return result;
+      }
+
       registerAnimations(this);
       configureDefinitions();
       ready = true;
@@ -183,7 +240,6 @@ export function installBobLuluUpdate(
       return;
     }
 
-    // Keep the game's approved BONK/crash image and behavior.
     if (pose === 'hit') {
       previousSetPose.call(this, pose);
       return;
@@ -191,7 +247,10 @@ export function installBobLuluUpdate(
 
     if (pose === 'run') {
       applyVisualState(this, focused.baseFrame);
-      if (this.anims.exists(focused.runAnimKey) && corgi.anims.currentAnim?.key !== focused.runAnimKey) {
+      if (
+        this.anims.exists(focused.runAnimKey) &&
+        corgi.anims.currentAnim?.key !== focused.runAnimKey
+      ) {
         corgi.play(focused.runAnimKey);
       }
       return;
