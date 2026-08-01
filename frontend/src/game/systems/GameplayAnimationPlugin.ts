@@ -19,7 +19,6 @@ interface RuntimeCorgiDef {
   jumpFrame?: number;
   fallFrame?: number;
   landFrame?: number;
-  hitFrame?: number;
 }
 
 interface AtlasRow {
@@ -31,6 +30,7 @@ interface AtlasRow {
 const ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
 const FRAMES_PER_CORGI = 7;
 const RUN_FRAME_COUNT = 4;
+const FIRST_NEW_CORGI_ROW = 6;
 
 // Atlas rows: four running frames, jump, fall, and land.
 const ATLAS_ROWS: AtlasRow[] = [
@@ -65,19 +65,21 @@ function configureDefinitions(): void {
     if (!definition) continue;
 
     const base = firstFrame(atlasRow.row);
-    Object.assign(definition, {
-      // The selection store uses the same uncropped full-body Run 1 frame.
-      texture: ATLAS_KEY,
-      textureFrame: base,
-      // Gameplay has real limb motion and dedicated airborne/landing poses.
-      runFrame: base,
-      runSheetKey: ATLAS_KEY,
-      runAnimKey: atlasRow.runAnimKey,
-      jumpFrame: base + 4,
-      fallFrame: base + 5,
-      landFrame: base + 6,
-      hitFrame: base + 6,
-    });
+
+    // Keep the polished, high-resolution Page 1 portraits. Replace only the
+    // eight newer store portraits whose old square crops cut off the paws.
+    if (atlasRow.row >= FIRST_NEW_CORGI_ROW) {
+      definition.texture = ATLAS_KEY;
+      definition.textureFrame = base;
+    }
+
+    // All fourteen gameplay characters use the same seven-state atlas.
+    definition.runFrame = base;
+    definition.runSheetKey = ATLAS_KEY;
+    definition.runAnimKey = atlasRow.runAnimKey;
+    definition.jumpFrame = base + 4;
+    definition.fallFrame = base + 5;
+    definition.landFrame = base + 6;
   }
 }
 
@@ -108,21 +110,20 @@ function selectedRow(): AtlasRow | undefined {
   return ROW_BY_ID.get(String((gameState as any).selectedCorgi ?? 'classic'));
 }
 
-function frameForPose(atlasRow: AtlasRow, pose: Pose): number {
+function frameForPose(atlasRow: AtlasRow, pose: Exclude<Pose, 'hit'>): number {
   const base = firstFrame(atlasRow.row);
   switch (pose) {
     case 'run': return base;
     case 'jump': return base + 4;
     case 'fall': return base + 5;
     case 'land': return base + 6;
-    case 'hit': return base + 6;
   }
 }
 
 /**
- * Final source of truth for all fourteen store portraits and gameplay poses.
- * Installed last so older static-character compatibility patches cannot
- * overwrite these frames.
+ * Final source of truth for all fourteen gameplay characters and the eight
+ * corrected newer store portraits. Installed last so older static-character
+ * compatibility patches cannot overwrite these frames.
  */
 export function installGameplayAnimation(
   PreloadSceneClass: SceneClass,
@@ -170,8 +171,8 @@ export function installGameplayAnimation(
     // then restore the completed atlas synchronously before anything renders.
     const savedRunFrame = selectedDefinition?.runFrame;
     const savedTextureFrame = selectedDefinition?.textureFrame;
-    if (selectedDefinition && atlasRow && atlasRow.row >= 6) {
-      const legacyFrame = atlasRow.row - 6;
+    if (selectedDefinition && atlasRow && atlasRow.row >= FIRST_NEW_CORGI_ROW) {
+      const legacyFrame = atlasRow.row - FIRST_NEW_CORGI_ROW;
       selectedDefinition.runFrame = legacyFrame;
       selectedDefinition.textureFrame = legacyFrame;
     }
@@ -213,6 +214,21 @@ export function installGameplayAnimation(
     const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
     if (!atlasRow || !corgi || !this.textures.exists(ATLAS_KEY)) {
       previousSetPose.call(this, pose);
+      return;
+    }
+
+    // Keep the approved dedicated BONK/crash artwork shared by all outfits.
+    if (pose === 'hit') {
+      if (!this.textures.exists('corgi_hit')) {
+        previousSetPose.call(this, pose);
+        return;
+      }
+      corgi.setTexture('corgi_hit', 0);
+      if (typeof this.sizeCorgiUniform === 'function') this.sizeCorgiUniform();
+      corgi.setFlipX(false);
+      corgi.setAngle(0);
+      corgi.clearTint();
+      corgi.setAlpha(1);
       return;
     }
 
