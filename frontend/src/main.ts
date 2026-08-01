@@ -14,6 +14,7 @@ import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
 import { installNewCorgiPack } from './game/systems/NewCorgiPackPlugin';
 import { installGameplayAnimation } from './game/systems/GameplayAnimationPlugin';
+import { installBobLuluUpdate } from './game/systems/BobLuluUpdatePlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -38,9 +39,9 @@ function boot() {
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
-  // Must be installed last: it replaces every legacy/static corgi definition
-  // with the completed full-body store art and gameplay animation atlas.
   installGameplayAnimation(PreloadScene, GameScene);
+  // Installed last and intentionally limited to only Pilot Bob and Princess Lulu.
+  installBobLuluUpdate(PreloadScene, GameScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
