@@ -41,7 +41,7 @@ function boot() {
   installPirateCorgiFix(GameScene, CorgiSelectScene);
   installGameplayAnimation(PreloadScene, GameScene);
   // Installed last and intentionally limited to only Pilot Bob and Princess Lulu.
-  installBobLuluUpdate(PreloadScene, GameScene);
+  installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
