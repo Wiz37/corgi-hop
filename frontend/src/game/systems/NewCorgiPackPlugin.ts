@@ -7,6 +7,11 @@ import {
   NEW_CORGI_ART_FRAME_COUNT,
   NEW_CORGI_ART_FRAME_SIZE,
 } from '../assets/NewCorgiArt';
+import {
+  PREMIUM_STORE_PORTRAITS_DATA_URI,
+  PREMIUM_STORE_PORTRAIT_FRAME_COUNT,
+  PREMIUM_STORE_PORTRAIT_FRAME_SIZE,
+} from '../assets/PremiumStorePortraits';
 
 type SceneClass = { prototype: Record<string, any> };
 
@@ -35,6 +40,7 @@ interface RuntimeCorgiDef {
 
 const PAGE_SIZE = 6;
 const CHARACTER_SHEET = 'approved_premium_corgis_20260801';
+const STORE_PORTRAIT_SHEET = 'premium_store_portraits_page2_20260801';
 
 const NEW_CORGIS: NewCorgiDef[] = [
   { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, frame: 0, runAnimKey: 'blue_merle_chef_run' },
@@ -53,6 +59,22 @@ let installed = false;
 function requirePremiumTexture(scene: Phaser.Scene): void {
   if (!scene.textures.exists(CHARACTER_SHEET)) {
     throw new Error('[Corgi Hop] Approved premium corgi artwork failed to load. Refusing to substitute the Classic Corgi.');
+  }
+}
+
+function requireStorePortraitTexture(scene: Phaser.Scene): void {
+  if (!scene.textures.exists(STORE_PORTRAIT_SHEET)) {
+    throw new Error('[Corgi Hop] Full-body premium store portraits failed to load.');
+  }
+}
+
+function applyFullBodyStorePortraits(runtimeCorgis: RuntimeCorgiDef[]): void {
+  for (let frame = 0; frame < PAGE_SIZE; frame++) {
+    const storeDef = NEW_CORGIS[frame];
+    const runtimeDef = runtimeCorgis.find((corgi) => corgi.id === storeDef.id);
+    if (!runtimeDef) continue;
+    runtimeDef.texture = STORE_PORTRAIT_SHEET;
+    runtimeDef.textureFrame = frame;
   }
 }
 
@@ -79,8 +101,8 @@ function selectedPremium(runtimeCorgis: RuntimeCorgiDef[]): RuntimeCorgiDef | un
 /**
  * Installs the eight approved illustrated corgis.
  *
- * The store and gameplay both use the same verified, bundled sprite sheet.
- * Premium characters never silently fall back to Classic Corgi artwork.
+ * Gameplay uses the bundled animation artwork. The six page-two store cards
+ * use separate padded, full-body portraits so paws and legs cannot be clipped.
  */
 export function installNewCorgiPack(
   PreloadSceneClass: SceneClass,
@@ -148,11 +170,22 @@ export function installNewCorgiPack(
         endFrame: NEW_CORGI_ART_FRAME_COUNT - 1,
       },
     );
+    this.load.spritesheet(
+      STORE_PORTRAIT_SHEET,
+      PREMIUM_STORE_PORTRAITS_DATA_URI,
+      {
+        frameWidth: PREMIUM_STORE_PORTRAIT_FRAME_SIZE,
+        frameHeight: PREMIUM_STORE_PORTRAIT_FRAME_SIZE,
+        startFrame: 0,
+        endFrame: PREMIUM_STORE_PORTRAIT_FRAME_COUNT - 1,
+      },
+    );
   };
 
   const originalPreloadCreate = preloadProto.create;
   preloadProto.create = function createNewCorgiAnimations(this: Phaser.Scene): void {
     registerAnimations(this);
+    requireStorePortraitTexture(this);
     originalPreloadCreate.call(this);
   };
 
@@ -163,6 +196,8 @@ export function installNewCorgiPack(
     data?: { characterPage?: number },
   ): void {
     requirePremiumTexture(this);
+    requireStorePortraitTexture(this);
+    applyFullBodyStorePortraits(runtimeCorgis);
 
     const allCorgis = runtimeCorgis.slice();
     const pageCount = Math.max(1, Math.ceil(allCorgis.length / PAGE_SIZE));
