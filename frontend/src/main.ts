@@ -8,6 +8,7 @@ import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installKidObstacles } from './game/systems/KidObstaclePlugin';
 import { installHawkObstacle } from './game/systems/HawkObstaclePlugin';
+import { installWholeGameVariety } from './game/systems/WholeGameVarietyPlugin';
 import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installLevel70Difficulty } from './game/systems/Level70DifficultyPlugin';
@@ -39,15 +40,15 @@ function boot() {
   installObstacleVariety(GameScene);
   installVariableJump(GameScene, HUDScene);
   installHardSafeBalance(GameScene);
-  // Owns the final score-based pattern and speed progression. Installed after
-  // older balance wrappers so doubles begin at 5 and safe triples begin at 30.
+  // Owns the final score-based speed progression and later-game difficulty.
   installLevel70Difficulty(GameScene);
-  // Installed after obstacle variety/balance so the final spawned boy and girl
-  // receive the exact kid artwork, object-height scaling, and fair hitboxes.
+  // Applies the supplied kid artwork and fair, object-height hitboxes.
   installKidObstacles(PreloadScene, GameScene);
-  // Replaces the existing airborne bird hazard with the supplied hawk artwork,
-  // a safe run-under lane, and a SCREEEEEECH warning before it enters view.
+  // Replaces the legacy bird art with the supplied hawk and screech warning.
   installHawkObstacle(PreloadScene, GameScene);
+  // Final obstacle wrapper: keeps hawks, kids, doubles, and triples randomized
+  // from the first obstacle through the entire run.
+  installWholeGameVariety(GameScene);
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
