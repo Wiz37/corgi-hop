@@ -6,6 +6,7 @@ import { GameScene } from './game/scenes/GameScene';
 import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
+import { installKidObstacles } from './game/systems/KidObstaclePlugin';
 import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installLevel70Difficulty } from './game/systems/Level70DifficultyPlugin';
@@ -40,6 +41,9 @@ function boot() {
   // Owns the final score-based pattern and speed progression. Installed after
   // older balance wrappers so doubles begin at 5 and safe triples begin at 30.
   installLevel70Difficulty(GameScene);
+  // Installed after obstacle variety/balance so the final spawned boy and girl
+  // receive the exact kid artwork, object-height scaling, and fair hitboxes.
+  installKidObstacles(PreloadScene, GameScene);
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
