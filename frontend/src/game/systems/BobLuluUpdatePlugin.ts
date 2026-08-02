@@ -60,7 +60,10 @@ function baseFrame(focused: FocusedCorgi): number {
 }
 
 function selectedFocusedCorgi(): FocusedCorgi | undefined {
-  return FOCUSED_BY_ID.get(String((gameState as any).selectedCorgi ?? 'classic'));
+  const selectedId = String(
+    (gameState as any).selectedCorgi ?? 'classic',
+  ) as FocusedCorgi['id'];
+  return FOCUSED_BY_ID.get(selectedId);
 }
 
 function storePortraitsReady(scene: Phaser.Scene): boolean {
@@ -250,8 +253,9 @@ export function installBobLuluUpdate(
       this.runTexKey = GAMEPLAY_ATLAS_KEY;
       this.runAnimKey = focused.runAnimKey;
       applyVisualState(this, base);
+      const wrongAnimation = corgi.anims.currentAnim?.key !== focused.runAnimKey;
       if (this.anims.exists(focused.runAnimKey)
-        && corgi.anims.currentAnim?.key !== focused.runAnimKey) {
+        && (!corgi.anims.isPlaying || wrongAnimation)) {
         corgi.play(focused.runAnimKey);
       }
       return;
