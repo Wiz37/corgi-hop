@@ -19,6 +19,7 @@ import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
 import { installNewCorgiPack } from './game/systems/NewCorgiPackPlugin';
 import { installGameplayAnimation } from './game/systems/GameplayAnimationPlugin';
+import { installStoreFullBodyFix } from './game/systems/StoreFullBodyFixPlugin';
 import { installBobLuluUpdate } from './game/systems/BobLuluUpdatePlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
@@ -54,6 +55,8 @@ function boot() {
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
   installGameplayAnimation(PreloadScene, GameScene);
+  // Page-two cards use the full-body gameplay key poses so no legs are clipped.
+  installStoreFullBodyFix(CorgiSelectScene);
   // Installed last and intentionally limited to only Pilot Bob and Princess Lulu.
   installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
   // Final spawn pass: makes boy and girl obstacles 50% larger everywhere.
