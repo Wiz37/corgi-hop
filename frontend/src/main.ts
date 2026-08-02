@@ -7,6 +7,7 @@ import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installKidObstacles } from './game/systems/KidObstaclePlugin';
+import { installHawkObstacle } from './game/systems/HawkObstaclePlugin';
 import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installLevel70Difficulty } from './game/systems/Level70DifficultyPlugin';
@@ -44,6 +45,9 @@ function boot() {
   // Installed after obstacle variety/balance so the final spawned boy and girl
   // receive the exact kid artwork, object-height scaling, and fair hitboxes.
   installKidObstacles(PreloadScene, GameScene);
+  // Replaces the existing airborne bird hazard with the supplied hawk artwork,
+  // a safe run-under lane, and a SCREEEEEECH warning before it enters view.
+  installHawkObstacle(PreloadScene, GameScene);
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
