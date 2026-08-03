@@ -26,13 +26,17 @@ interface FocusedCorgi {
   storeDataUri: string;
   sourceRow: number;
   runAnimKey: string;
+  useStandaloneGameplay?: boolean;
 }
 
-// GameplayAnimationPlugin already preloads this atlas. Rows 12 and 13 contain
-// Bob and Lulu's four genuinely different run drawings plus jump/fall/land.
+// GameplayAnimationPlugin preloads this atlas. Lulu continues using her clean
+// row from it. Bob's row is damaged in the shipped atlas, so Bob now uses the
+// same proven standalone full-body portrait that already renders correctly in
+// the store. The normal gameplay bounce and jump physics still provide motion.
 const GAMEPLAY_ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
 const FRAMES_PER_CORGI = 7;
 const RUN_FRAME_COUNT = 4;
+const GAMEPLAY_ACTOR_DEPTH = 24;
 
 const FOCUSED_CORGIS: FocusedCorgi[] = [
   {
@@ -40,7 +44,8 @@ const FOCUSED_CORGIS: FocusedCorgi[] = [
     storeTextureKey: 'pilot_bob_store_standalone_20260801',
     storeDataUri: BOB_STORE_PORTRAIT_DATA_URI,
     sourceRow: 12,
-    runAnimKey: 'pilot_bob_true_run_20260801',
+    runAnimKey: 'pilot_bob_full_body_run_20260803',
+    useStandaloneGameplay: true,
   },
   {
     id: 'princess_lulu',
@@ -70,6 +75,14 @@ function storePortraitsReady(scene: Phaser.Scene): boolean {
   return FOCUSED_CORGIS.every((focused) => scene.textures.exists(focused.storeTextureKey));
 }
 
+function gameplayTextureKey(focused: FocusedCorgi): string {
+  return focused.useStandaloneGameplay ? focused.storeTextureKey : GAMEPLAY_ATLAS_KEY;
+}
+
+function gameplayTextureReady(scene: Phaser.Scene, focused: FocusedCorgi): boolean {
+  return scene.textures.exists(gameplayTextureKey(focused));
+}
+
 function configureStoreDefinitions(): void {
   const definitions = CORGIS as unknown as RuntimeCorgiDef[];
 
@@ -77,7 +90,6 @@ function configureStoreDefinitions(): void {
     const definition = definitions.find((candidate) => candidate.id === focused.id);
     if (!definition) continue;
 
-    // Store cards always use the clean standalone portraits—not gameplay frames.
     definition.texture = focused.storeTextureKey;
     definition.textureFrame = 0;
   }
@@ -91,6 +103,11 @@ function configureGameplayDefinitions(): void {
     if (!definition) continue;
 
     const base = baseFrame(focused);
+
+    // Keep the atlas as the temporary boot sheet so GameScene can construct a
+    // normal sprite with a numeric frame. Bob's one-frame animation and final
+    // create wrapper immediately replace it with the clean standalone image
+    // before gameplay is rendered.
     definition.runFrame = base;
     definition.runSheetKey = GAMEPLAY_ATLAS_KEY;
     definition.runAnimKey = focused.runAnimKey;
@@ -100,9 +117,19 @@ function configureGameplayDefinitions(): void {
   }
 }
 
-function registerTrueRunAnimations(scene: Phaser.Scene): void {
+function registerRunAnimations(scene: Phaser.Scene): void {
   for (const focused of FOCUSED_CORGIS) {
     if (scene.anims.exists(focused.runAnimKey)) scene.anims.remove(focused.runAnimKey);
+
+    if (focused.useStandaloneGameplay) {
+      scene.anims.create({
+        key: focused.runAnimKey,
+        frames: [{ key: focused.storeTextureKey }],
+        frameRate: 1,
+        repeat: -1,
+      });
+      continue;
+    }
 
     const base = baseFrame(focused);
     scene.anims.create({
@@ -119,19 +146,29 @@ function registerTrueRunAnimations(scene: Phaser.Scene): void {
 
 function applyVisualState(
   scene: Phaser.Scene & Record<string, any>,
-  frame: number,
+  textureKey: string,
+  frame?: number,
 ): void {
   const corgi = scene.corgi as Phaser.Physics.Arcade.Sprite | undefined;
   if (!corgi) return;
 
-  const alreadyShowing =
-    corgi.texture?.key === GAMEPLAY_ATLAS_KEY && String(corgi.frame?.name) === String(frame);
+  const sameTexture = corgi.texture?.key === textureKey;
+  const sameFrame = frame === undefined || String(corgi.frame?.name) === String(frame);
 
-  if (!alreadyShowing) {
-    corgi.setTexture(GAMEPLAY_ATLAS_KEY, frame);
+  if (!(sameTexture && sameFrame)) {
+    if (frame === undefined) corgi.setTexture(textureKey);
+    else corgi.setTexture(textureKey, frame);
+
     if (typeof scene.sizeCorgiUniform === 'function') scene.sizeCorgiUniform();
   }
 
+  // Clear every visual state that could cause the transparent/cropped look
+  // seen in TestFlight. Bob's portrait is known-good because the store uses
+  // the exact same texture successfully.
+  corgi.clearMask();
+  corgi.setOrigin(0.5, 1);
+  corgi.setDepth(GAMEPLAY_ACTOR_DEPTH);
+  corgi.setVisible(true);
   corgi.setFlipX(false);
   corgi.setAngle(0);
   corgi.clearTint();
@@ -142,9 +179,9 @@ function applyVisualState(
 /**
  * Focused Bob/Lulu patch:
  * - preserves their standalone store portraits;
- * - replaces the duplicated/squashed pseudo-eight-frame motion with four
- *   genuinely different illustrated stride frames;
- * - uses dedicated jump, fall, and landing artwork from the same atlas.
+ * - uses Bob's clean full-body standalone portrait for all gameplay states;
+ * - leaves Lulu on her four illustrated run frames plus jump/fall/land poses;
+ * - keeps the existing run bounce and physical jump behavior for both dogs.
  */
 export function installBobLuluUpdate(
   PreloadSceneClass: SceneClass,
@@ -171,27 +208,26 @@ export function installBobLuluUpdate(
     if (storePortraitsReady(this)) {
       configureStoreDefinitions();
     } else {
-      console.error('[Corgi Hop] Standalone Bob/Lulu store portraits failed to load.');
+      console.error('[Corgi Hop] Standalone Bob/Lulu portraits failed to load.');
     }
 
     gameplayReady = false;
-    if (!this.textures.exists(GAMEPLAY_ATLAS_KEY)) {
-      console.error('[Corgi Hop] Bob/Lulu source gameplay atlas is unavailable.');
+    if (!storePortraitsReady(this) || !this.textures.exists(GAMEPLAY_ATLAS_KEY)) {
+      console.error('[Corgi Hop] Bob/Lulu gameplay textures are unavailable.');
       return result;
     }
 
     try {
-      registerTrueRunAnimations(this);
+      registerRunAnimations(this);
       configureGameplayDefinitions();
       gameplayReady = true;
     } catch (error) {
-      console.error('[Corgi Hop] Bob/Lulu gameplay animation setup failed.', error);
+      console.error('[Corgi Hop] Bob/Lulu gameplay setup failed.', error);
     }
 
     return result;
   };
 
-  // Reassert clean standalone portrait keys immediately before every store render.
   const selectPrototype = CorgiSelectSceneClass.prototype;
   const previousSelectCreate = selectPrototype.create;
   selectPrototype.create = function createStoreWithCleanBobLulu(
@@ -202,11 +238,11 @@ export function installBobLuluUpdate(
     return previousSelectCreate.apply(this, args);
   };
 
-  // Installed after GameplayAnimationPlugin, so this final wrapper wins only for
-  // Bob and Lulu while every other corgi keeps its existing gameplay behavior.
+  // Installed after GameplayAnimationPlugin, so this final wrapper wins only
+  // for Bob and Lulu while every other corgi keeps its existing behavior.
   const gamePrototype = GameSceneClass.prototype;
   const previousGameCreate = gamePrototype.create;
-  gamePrototype.create = function createWithTrueBobLuluRun(
+  gamePrototype.create = function createWithCleanBobAndLulu(
     this: Phaser.Scene & Record<string, any>,
     ...args: any[]
   ): any {
@@ -214,30 +250,31 @@ export function installBobLuluUpdate(
     const focused = selectedFocusedCorgi();
     const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
 
-    if (!focused || !gameplayReady || !corgi || !this.textures.exists(GAMEPLAY_ATLAS_KEY)) {
+    if (!focused || !gameplayReady || !corgi || !gameplayTextureReady(this, focused)) {
       return result;
     }
 
     configureGameplayDefinitions();
-    const base = baseFrame(focused);
-    this.runTexKey = GAMEPLAY_ATLAS_KEY;
+    const textureKey = gameplayTextureKey(focused);
+    const frame = focused.useStandaloneGameplay ? undefined : baseFrame(focused);
+    this.runTexKey = textureKey;
     this.runAnimKey = focused.runAnimKey;
 
     corgi.anims.stop();
-    applyVisualState(this, base);
+    applyVisualState(this, textureKey, frame);
     if (this.anims.exists(focused.runAnimKey)) corgi.play(focused.runAnimKey);
     return result;
   };
 
   const previousSetPose = gamePrototype.setPose;
-  gamePrototype.setPose = function setTrueBobLuluPose(
+  gamePrototype.setPose = function setCleanBobLuluPose(
     this: Phaser.Scene & Record<string, any>,
     pose: Pose,
   ): void {
     const focused = selectedFocusedCorgi();
     const corgi = this.corgi as Phaser.Physics.Arcade.Sprite | undefined;
 
-    if (!focused || !gameplayReady || !corgi || !this.textures.exists(GAMEPLAY_ATLAS_KEY)) {
+    if (!focused || !gameplayReady || !corgi || !gameplayTextureReady(this, focused)) {
       previousSetPose.call(this, pose);
       return;
     }
@@ -248,11 +285,30 @@ export function installBobLuluUpdate(
       return;
     }
 
+    const textureKey = gameplayTextureKey(focused);
+
+    if (focused.useStandaloneGameplay) {
+      this.runTexKey = textureKey;
+      this.runAnimKey = focused.runAnimKey;
+      applyVisualState(this, textureKey);
+
+      if (pose === 'run') {
+        const wrongAnimation = corgi.anims.currentAnim?.key !== focused.runAnimKey;
+        if (this.anims.exists(focused.runAnimKey)
+          && (!corgi.anims.isPlaying || wrongAnimation)) {
+          corgi.play(focused.runAnimKey);
+        }
+      } else {
+        corgi.anims.stop();
+      }
+      return;
+    }
+
     const base = baseFrame(focused);
     if (pose === 'run') {
-      this.runTexKey = GAMEPLAY_ATLAS_KEY;
+      this.runTexKey = textureKey;
       this.runAnimKey = focused.runAnimKey;
-      applyVisualState(this, base);
+      applyVisualState(this, textureKey, base);
       const wrongAnimation = corgi.anims.currentAnim?.key !== focused.runAnimKey;
       if (this.anims.exists(focused.runAnimKey)
         && (!corgi.anims.isPlaying || wrongAnimation)) {
@@ -263,6 +319,6 @@ export function installBobLuluUpdate(
 
     corgi.anims.stop();
     const frame = pose === 'jump' ? base + 4 : pose === 'fall' ? base + 5 : base + 6;
-    applyVisualState(this, frame);
+    applyVisualState(this, textureKey, frame);
   };
 }
