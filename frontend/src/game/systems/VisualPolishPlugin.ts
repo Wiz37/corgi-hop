@@ -9,6 +9,7 @@ const RUN_TEXTURE_KEYS = [
   'astronaut_run',
 ] as const;
 
+const GAMEPLAY_CORGI_DEPTH = 24;
 let installed = false;
 
 function sharpenRunSheets(scene: any): void {
@@ -42,6 +43,13 @@ function disableContinuousCorgiTrail(scene: any): void {
   scene.dust.emitting = false;
 }
 
+function keepCorgiAboveScenery(scene: any): void {
+  // The foreground foliage tile is depth 20. The player used to sit at depth
+  // 15, which allowed trees/foliage to visually merge with airborne corgis.
+  // Keep the player clearly readable without changing physics or collision.
+  scene?.corgi?.setDepth?.(GAMEPLAY_CORGI_DEPTH);
+}
+
 function wrapCreate(SceneClass: { prototype: object }, cleanGameplayTrail: boolean): void {
   const proto = SceneClass.prototype as any;
   const originalCreate = proto.create;
@@ -51,15 +59,18 @@ function wrapCreate(SceneClass: { prototype: object }, cleanGameplayTrail: boole
     const result = originalCreate.apply(this, args);
     sharpenRunSheets(this);
     replaceDamagedTreeArtwork(this);
-    if (cleanGameplayTrail) disableContinuousCorgiTrail(this);
+    if (cleanGameplayTrail) {
+      disableContinuousCorgiTrail(this);
+      keepCorgiAboveScenery(this);
+    }
     return result;
   };
 }
 
 /**
  * Removes the damaged tree texture from every rendered scene, prevents run-sheet
- * frame bleed, and disables the continuous dust trail while preserving jump and
- * landing bursts.
+ * frame bleed, disables the continuous dust trail, and keeps the gameplay corgi
+ * above foreground scenery while preserving jump and landing bursts.
  */
 export function installVisualPolish(
   GameSceneClass: { prototype: object },
