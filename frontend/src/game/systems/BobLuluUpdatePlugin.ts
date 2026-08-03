@@ -29,10 +29,10 @@ interface FocusedCorgi {
   useStandaloneGameplay?: boolean;
 }
 
-// GameplayAnimationPlugin preloads this atlas. Lulu continues using her clean
-// row from it. Bob's row is damaged in the shipped atlas, so Bob now uses the
-// same proven standalone full-body portrait that already renders correctly in
-// the store. The normal gameplay bounce and jump physics still provide motion.
+// Bob and Lulu's shipped atlas rows can render cropped or partially transparent
+// in gameplay. Both now use the same proven standalone full-body portraits that
+// already render correctly in the store. The normal gameplay bounce and jump
+// physics still provide motion while preserving every leg and paw.
 const GAMEPLAY_ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
 const FRAMES_PER_CORGI = 7;
 const RUN_FRAME_COUNT = 4;
@@ -52,7 +52,8 @@ const FOCUSED_CORGIS: FocusedCorgi[] = [
     storeTextureKey: 'princess_lulu_store_standalone_20260801',
     storeDataUri: LULU_STORE_PORTRAIT_DATA_URI,
     sourceRow: 13,
-    runAnimKey: 'princess_lulu_true_run_20260801',
+    runAnimKey: 'princess_lulu_full_body_run_20260803',
+    useStandaloneGameplay: true,
   },
 ];
 
@@ -105,9 +106,8 @@ function configureGameplayDefinitions(): void {
     const base = baseFrame(focused);
 
     // Keep the atlas as the temporary boot sheet so GameScene can construct a
-    // normal sprite with a numeric frame. Bob's one-frame animation and final
-    // create wrapper immediately replace it with the clean standalone image
-    // before gameplay is rendered.
+    // normal sprite with a numeric frame. The one-frame standalone animations
+    // and final create wrapper replace it before either dog is rendered.
     definition.runFrame = base;
     definition.runSheetKey = GAMEPLAY_ATLAS_KEY;
     definition.runAnimKey = focused.runAnimKey;
@@ -163,8 +163,8 @@ function applyVisualState(
   }
 
   // Clear every visual state that could cause the transparent/cropped look
-  // seen in TestFlight. Bob's portrait is known-good because the store uses
-  // the exact same texture successfully.
+  // seen in TestFlight. These portraits are known-good because the store uses
+  // the exact same textures successfully.
   corgi.clearMask();
   corgi.setOrigin(0.5, 1);
   corgi.setDepth(GAMEPLAY_ACTOR_DEPTH);
@@ -179,8 +179,8 @@ function applyVisualState(
 /**
  * Focused Bob/Lulu patch:
  * - preserves their standalone store portraits;
- * - uses Bob's clean full-body standalone portrait for all gameplay states;
- * - leaves Lulu on her four illustrated run frames plus jump/fall/land poses;
+ * - uses clean full-body standalone portraits for all gameplay states;
+ * - prevents cropped legs, missing paws, masks, and partial transparency;
  * - keeps the existing run bounce and physical jump behavior for both dogs.
  */
 export function installBobLuluUpdate(
