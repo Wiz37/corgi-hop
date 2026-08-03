@@ -10,6 +10,7 @@ import { installKidObstacles } from './game/systems/KidObstaclePlugin';
 import { installHawkObstacle } from './game/systems/HawkObstaclePlugin';
 import { installWholeGameVariety } from './game/systems/WholeGameVarietyPlugin';
 import { installKidSizeBoost } from './game/systems/KidSizeBoostPlugin';
+import { installFrequentBones } from './game/systems/FrequentBonesPlugin';
 import { installVariableJump } from './game/systems/VariableJumpPlugin';
 import { installHardSafeBalance } from './game/systems/HardSafeBalancePlugin';
 import { installLevel70Difficulty } from './game/systems/Level70DifficultyPlugin';
@@ -64,6 +65,8 @@ function boot() {
   installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
   // Final spawn pass: makes boy and girl obstacles 50% larger everywhere.
   installKidSizeBoost(GameScene);
+  // Fills empty obstacle groups so Bones appear in roughly 70% of groups.
+  installFrequentBones(GameScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
