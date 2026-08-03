@@ -18,6 +18,7 @@ import { installVisualPolish } from './game/systems/VisualPolishPlugin';
 import { installPirateCorgiFix } from './game/systems/PirateCorgiFixPlugin';
 import { installPirateTextureRepair } from './game/systems/PirateTextureRepairPlugin';
 import { installNewCorgiPack } from './game/systems/NewCorgiPackPlugin';
+import { installUniformCorgiPricing } from './game/systems/UniformCorgiPricingPlugin';
 import { installGameplayAnimation } from './game/systems/GameplayAnimationPlugin';
 import { installStoreFullBodyFix } from './game/systems/StoreFullBodyFixPlugin';
 import { installBobLuluUpdate } from './game/systems/BobLuluUpdatePlugin';
@@ -37,6 +38,8 @@ export const GAME_HEIGHT = 1280;
 function boot() {
   installPirateTextureRepair(PreloadScene);
   installNewCorgiPack(PreloadScene, CorgiSelectScene, GameScene);
+  // Classic stays free; every other corgi costs exactly 1,000 Bones.
+  installUniformCorgiPricing();
   installTripleTiming(GameScene);
   installFunGameplay(GameScene);
   installObstacleVariety(GameScene);
