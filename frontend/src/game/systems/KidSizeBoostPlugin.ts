@@ -7,6 +7,9 @@ type KidSprite = Phaser.GameObjects.Sprite & {
 };
 
 const KID_SCALE_MULTIPLIER = 1.5;
+const MIN_VISIBLE_KID_HEIGHT = 160;
+const MAX_VISIBLE_KID_HEIGHT = 190;
+const KID_GAMEPLAY_DEPTH = 23;
 let installed = false;
 
 function isKidObstacle(object: any): object is KidSprite {
@@ -21,17 +24,30 @@ function enlargeKidObstacle(kid: KidSprite): void {
 
   const originalWidth = Math.max(1, Number(kid.displayWidth) || 1);
   const originalHeight = Math.max(1, Number(kid.displayHeight) || 1);
+  const aspect = originalWidth / originalHeight;
+
+  // The previous implementation multiplied the generated fence height. A
+  // short 70 px hurdle therefore created a child only about 105 px tall,
+  // which looked like a tiny background decoration. Give both children a
+  // consistent, clearly readable gameplay size instead.
+  const visibleHeight = Phaser.Math.Clamp(
+    originalHeight * KID_SCALE_MULTIPLIER,
+    MIN_VISIBLE_KID_HEIGHT,
+    MAX_VISIBLE_KID_HEIGHT,
+  );
+  const visibleWidth = visibleHeight * aspect;
 
   kid
     .setOrigin(0.5, 1)
-    .setDisplaySize(
-      originalWidth * KID_SCALE_MULTIPLIER,
-      originalHeight * KID_SCALE_MULTIPLIER,
-    );
+    .setDisplaySize(visibleWidth, visibleHeight)
+    .setDepth(KID_GAMEPLAY_DEPTH)
+    .setAlpha(1)
+    .setFlipX(false)
+    .setAngle(0)
+    .clearTint();
 
-  // Make the artwork 50% larger without making the obstacle unfair. The
-  // collision area remains based on the previous size and stays centered on
-  // the child's body rather than expanding to the full new silhouette.
+  // Keep collision based on the original validated hurdle dimensions. The
+  // larger artwork is easier to see, but the required jump remains fair.
   const hitWidth = Math.max(26, originalWidth * 0.72);
   const hitHeight = originalHeight * 0.82;
   kid.hitRect = new Phaser.Geom.Rectangle(
@@ -45,9 +61,9 @@ function enlargeKidObstacle(kid: KidSprite): void {
 }
 
 /**
- * Final post-spawn pass that makes both supplied kid obstacles exactly 50%
- * larger in every single, double, and triple group while preserving fair
- * pre-boost collision dimensions.
+ * Final post-spawn pass that gives both supplied kid obstacles a consistent
+ * visible size in every single, double, and triple group while preserving the
+ * validated pre-boost collision dimensions.
  */
 export function installKidSizeBoost(GameSceneClass: SceneClass): void {
   if (installed) return;
