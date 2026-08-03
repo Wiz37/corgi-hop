@@ -1,11 +1,11 @@
 import { CORGIS, CORGI_BONE_PRICE } from './GameState';
 
-const UNLOCK_PRICE_BONES = 1;
+const UNLOCK_PRICE_BONES = 1000;
 let installed = false;
 
 /**
  * Keeps the Classic Corgi free and prices every other selectable corgi at the
- * same 1-Bone unlock cost. Install this after NewCorgiPack so its runtime
+ * same 1,000-Bone unlock cost. Install this after NewCorgiPack so its runtime
  * characters are included as well.
  */
 export function installUniformCorgiPricing(): void {
