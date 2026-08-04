@@ -59,8 +59,9 @@ function boot() {
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
   installGameplayAnimation(PreloadScene, GameScene);
-  // Page-two cards use the full-body gameplay key poses so no legs are clipped.
-  installStoreFullBodyFix(CorgiSelectScene);
+  // The six page-two corgis use their padded full-body portraits in both the
+  // store and gameplay so their legs and paws can never be clipped.
+  installStoreFullBodyFix(CorgiSelectScene, GameScene);
   // Installed last and intentionally limited to only Pilot Bob and Princess Lulu.
   installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
   // Final spawn pass: makes boy and girl obstacles 50% larger everywhere.
