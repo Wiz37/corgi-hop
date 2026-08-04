@@ -5,6 +5,7 @@
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node ./scripts/postinstall.js && node ./scripts/enforce-ios15.cjs",
+    "capacitor:sync:after": "node ./scripts/enforce-ios15.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
