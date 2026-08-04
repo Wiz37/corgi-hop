@@ -23,6 +23,7 @@ import { installUniformCorgiPricing } from './game/systems/UniformCorgiPricingPl
 import { installGameplayAnimation } from './game/systems/GameplayAnimationPlugin';
 import { installStoreFullBodyFix } from './game/systems/StoreFullBodyFixPlugin';
 import { installBobLuluUpdate } from './game/systems/BobLuluUpdatePlugin';
+import { installLiveEightFrameGameplay } from './game/systems/LiveEightFrameGameplayPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -58,16 +59,19 @@ function boot() {
   installBonkEyes(GameScene);
   installVisualPolish(GameScene, MenuScene);
   installPirateCorgiFix(GameScene, CorgiSelectScene);
+  // Builds the shared eight-frame run cycles used by both store and gameplay.
   installGameplayAnimation(PreloadScene, GameScene);
-  // The six page-two corgis use their padded full-body portraits in both the
-  // store and gameplay so their legs and paws can never be clipped.
+  // Store cards preview the exact same run sheets and animation keys as gameplay.
   installStoreFullBodyFix(CorgiSelectScene, GameScene);
-  // Installed last and intentionally limited to only Pilot Bob and Princess Lulu.
+  // Bob and Lulu now stay on the shared gameplay-animation path.
   installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
   // Final spawn pass: makes boy and girl obstacles 50% larger everywhere.
   installKidSizeBoost(GameScene);
   // Fills empty obstacle groups so Bones appear in roughly 70% of groups.
   installFrequentBones(GameScene);
+  // Installed last so no older pose or portrait wrapper can replace the live
+  // eight-frame animation after the corgi returns to its running state.
+  installLiveEightFrameGameplay(GameScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
