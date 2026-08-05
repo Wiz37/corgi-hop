@@ -101,9 +101,9 @@ export class PreloadScene extends Phaser.Scene {
     // Heeler Lifeguard uses the user-approved assets: a dedicated static store
     // portrait and a transparent 4×2 eight-frame gameplay sheet.
     this.load.image('heeler_lifeguard_store', '/assets/heeler_lifeguard_store.png?v=20260805b');
-    this.load.spritesheet('heeler_lifeguard_run_sheet', '/assets/heeler_lifeguard_run_sheet.png?v=20260805b', {
-      frameWidth: 384,
-      frameHeight: 512,
+    this.load.spritesheet('heeler_lifeguard_run_sheet', '/assets/heeler_lifeguard_run_sheet.png?v=20260805c', {
+      frameWidth: 320,
+      frameHeight: 224,
     });
 
     // Cosmetic corgis — static portraits used on menus and shop.
