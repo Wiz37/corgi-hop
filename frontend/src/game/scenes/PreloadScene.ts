@@ -100,7 +100,13 @@ export class PreloadScene extends Phaser.Scene {
 
     // Heeler Lifeguard uses the user-approved assets: a dedicated static store
     // portrait and a transparent 4×2 eight-frame gameplay sheet.
-    this.load.image('heeler_lifeguard_store', '/assets/heeler_lifeguard_store.png?v=20260805b');
+    this.load.image('heeler_lifeguard_store', '/assets/heeler_lifeguard_store_v2.jpg?v=20260805d');
+    this.load.image('blue_merle_chef_store', '/assets/blue_merle_chef_store.jpg?v=20260805d');
+    this.load.image('black_tri_tuxedo_store', '/assets/black_tri_tuxedo_store.jpg?v=20260805d');
+    this.load.image('red_tri_ninja_store', '/assets/red_tri_ninja_store.jpg?v=20260805d');
+    this.load.image('brindle_viking_store', '/assets/brindle_viking_store.jpg?v=20260805d');
+    this.load.image('pilot_bob_store', '/assets/pilot_bob_store.jpg?v=20260805d');
+    this.load.image('princess_lulu_store', '/assets/princess_lulu_store.jpg?v=20260805d');
     this.load.spritesheet('heeler_lifeguard_run_sheet', '/assets/heeler_lifeguard_run_sheet.png?v=20260805c', {
       frameWidth: 320,
       frameHeight: 224,
