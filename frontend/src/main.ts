@@ -24,6 +24,7 @@ import { installGameplayAnimation } from './game/systems/GameplayAnimationPlugin
 import { installStoreFullBodyFix } from './game/systems/StoreFullBodyFixPlugin';
 import { installBobLuluUpdate } from './game/systems/BobLuluUpdatePlugin';
 import { installLiveEightFrameGameplay } from './game/systems/LiveEightFrameGameplayPlugin';
+import { installHeelerLifeguardFix } from './game/systems/HeelerLifeguardFixPlugin';
 import { HUDScene } from './game/scenes/HUDScene';
 import { PauseScene } from './game/scenes/PauseScene';
 import { GameOverScene } from './game/scenes/GameOverScene';
@@ -69,9 +70,13 @@ function boot() {
   installKidSizeBoost(GameScene);
   // Fills empty obstacle groups so Bones appear in roughly 70% of groups.
   installFrequentBones(GameScene);
-  // Installed last so no older pose or portrait wrapper can replace the live
-  // eight-frame animation after the corgi returns to its running state.
+  // Installed after the shared character systems so every corgi resumes the
+  // eight-frame cycle when returning to its running state.
   installLiveEightFrameGameplay(GameScene);
+  // First one-at-a-time character repair. Installed last so the Heeler's full
+  // body, exact paw baseline, store preview, and eight-frame run cannot be
+  // replaced by any older shared fallback.
+  installHeelerLifeguardFix(PreloadScene, GameScene);
   sound.init();
 
   const config: Phaser.Types.Core.GameConfig = {
