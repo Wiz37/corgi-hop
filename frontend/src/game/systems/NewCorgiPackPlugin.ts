@@ -41,6 +41,15 @@ interface RuntimeCorgiDef {
 const PAGE_SIZE = 6;
 const CHARACTER_SHEET = 'approved_premium_corgis_20260801';
 const STORE_PORTRAIT_SHEET = 'premium_store_portraits_page2_20260801';
+const DEDICATED_STORE_TEXTURES: Record<string, string> = {
+  blue_merle_chef: 'blue_merle_chef_store',
+  black_tri_tuxedo: 'black_tri_tuxedo_store',
+  red_tri_ninja: 'red_tri_ninja_store',
+  brindle_viking: 'brindle_viking_store',
+  heeler_lifeguard: 'heeler_lifeguard_store',
+  pilot_bob: 'pilot_bob_store',
+  princess_lulu: 'princess_lulu_store',
+};
 
 const NEW_CORGIS: NewCorgiDef[] = [
   { id: 'blue_merle_chef', name: 'Blue Merle Chef Corgi', price: 2800, frame: 0, runAnimKey: 'blue_merle_chef_run' },
@@ -71,11 +80,17 @@ function applyFullBodyStorePortraits(runtimeCorgis: RuntimeCorgiDef[]): void {
     const storeDef = NEW_CORGIS[frame];
     const runtimeDef = runtimeCorgis.find((corgi) => corgi.id === storeDef.id);
     if (!runtimeDef) continue;
-    // Heeler Lifeguard owns a dedicated stock standing portrait. Do not let
-    // the shared page-two sheet or gameplay animation replace it in the store.
-    if (runtimeDef.id === 'heeler_lifeguard') continue;
     runtimeDef.texture = STORE_PORTRAIT_SHEET;
     runtimeDef.textureFrame = frame;
+  }
+
+  // Use the exact user-supplied static portraits where available. Sable
+  // Aviator intentionally remains on the existing approved portrait.
+  for (const [id, texture] of Object.entries(DEDICATED_STORE_TEXTURES)) {
+    const runtimeDef = runtimeCorgis.find((corgi) => corgi.id === id);
+    if (!runtimeDef) continue;
+    runtimeDef.texture = texture;
+    runtimeDef.textureFrame = 0;
   }
 }
 

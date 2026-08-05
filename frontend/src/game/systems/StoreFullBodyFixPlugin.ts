@@ -14,43 +14,14 @@ interface RuntimeCorgiDef {
 }
 
 const CARD_TEST_ID_PREFIX = 'select-corgi-';
-const STATIC_STOCK_STORE_IDS = new Set([
-  'classic',
-  'starter',
-  'cowboy',
-  'superhero',
-  'pirate',
-  'astronaut',
-  'heeler_lifeguard',
-]);
 let installed = false;
 
-function animatedAsset(
+function stockPortraitAsset(
   scene: Phaser.Scene,
   definition: RuntimeCorgiDef,
-): { texture: string; frame?: number; animation?: string } {
-  // Original characters and Heeler use their stock standing portraits in the
-  // store. Their run sheets are gameplay-only and must never animate on cards.
-  if (STATIC_STOCK_STORE_IDS.has(definition.id) && scene.textures.exists(definition.texture)) {
-    return { texture: definition.texture, frame: definition.textureFrame };
-  }
-
-  const runSheetKey = definition.runSheetKey;
-  const runAnimKey = definition.runAnimKey;
-
-  if (
-    runSheetKey
-    && runAnimKey
-    && scene.textures.exists(runSheetKey)
-    && scene.anims.exists(runAnimKey)
-  ) {
-    return {
-      texture: runSheetKey,
-      frame: definition.runFrame ?? 0,
-      animation: runAnimKey,
-    };
-  }
-
+): { texture: string; frame?: number } {
+  // Character-select cards always use static stock portraits. Running sheets
+  // and animations are reserved exclusively for live gameplay.
   if (scene.textures.exists(definition.texture)) {
     return {
       texture: definition.texture,
@@ -71,14 +42,13 @@ function replaceCardPortrait(
   scene: Phaser.Scene,
   card: Phaser.GameObjects.Container,
   definition: RuntimeCorgiDef,
-  phase: number,
 ): void {
   const currentPortrait = card.list.find((child) =>
     child instanceof Phaser.GameObjects.Image,
   ) as Phaser.GameObjects.Image | undefined;
   if (!currentPortrait) return;
 
-  const asset = animatedAsset(scene, definition);
+  const asset = stockPortraitAsset(scene, definition);
   const index = card.getIndex(currentPortrait);
   const width = currentPortrait.displayWidth;
   const height = currentPortrait.displayHeight;
@@ -99,39 +69,27 @@ function replaceCardPortrait(
   if (definition.tint !== undefined) sprite.setTint(definition.tint);
   if (index >= 0) card.addAt(sprite, index);
   else card.add(sprite);
-
-  if (asset.animation && scene.anims.exists(asset.animation)) {
-    sprite.play(asset.animation);
-    const animation = sprite.anims.currentAnim;
-    if (animation && animation.frames.length > 1) {
-      sprite.anims.setProgress(phase % 1);
-    }
-  }
 }
 
-function animateVisibleStoreCards(scene: Phaser.Scene): void {
+function replaceVisibleStorePortraits(scene: Phaser.Scene): void {
   const definitions = CORGIS as unknown as RuntimeCorgiDef[];
   const cards = scene.children.list.filter((child) =>
     child instanceof Phaser.GameObjects.Container
     && cardCorgiId(child as Phaser.GameObjects.Container),
   ) as Phaser.GameObjects.Container[];
 
-  cards.forEach((card, index) => {
+  cards.forEach((card) => {
     const id = cardCorgiId(card);
     const definition = definitions.find((candidate) => candidate.id === id);
     if (!definition) return;
-    replaceCardPortrait(scene, card, definition, index / Math.max(1, cards.length));
+    replaceCardPortrait(scene, card, definition);
   });
 }
 
 /**
- * Uses each corgi's real gameplay run sheet and animation in the character
- * store. This keeps every card visually identical to the playable character,
- * gives all fourteen corgis their full eight-frame stride, and avoids the
- * optional portrait sheets that previously fell back to the Classic Corgi.
- *
- * Gameplay is intentionally untouched here. GameplayAnimationPlugin remains
- * the single owner of the newer corgis' run, jump, fall, and landing poses.
+ * Uses each corgi's dedicated static stock portrait on character-select cards.
+ * No store portrait plays a running animation; run sheets remain exclusively
+ * owned by gameplay. Gameplay behavior is intentionally untouched here.
  */
 export function installStoreFullBodyFix(
   CorgiSelectSceneClass: SceneClass,
@@ -143,12 +101,12 @@ export function installStoreFullBodyFix(
   const selectPrototype = CorgiSelectSceneClass.prototype;
   const previousCreate = selectPrototype.create;
 
-  selectPrototype.create = function createAnimatedCorgiStore(
+  selectPrototype.create = function createStaticCorgiStore(
     this: Phaser.Scene & Record<string, any>,
     ...args: unknown[]
   ): unknown {
     const result = previousCreate.apply(this, args);
-    animateVisibleStoreCards(this);
+    replaceVisibleStorePortraits(this);
     return result;
   };
 }
