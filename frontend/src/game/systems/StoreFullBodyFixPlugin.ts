@@ -14,15 +14,6 @@ interface RuntimeCorgiDef {
 }
 
 const CARD_TEST_ID_PREFIX = 'select-corgi-';
-const STATIC_STOCK_STORE_IDS = new Set([
-  'classic',
-  'starter',
-  'cowboy',
-  'superhero',
-  'pirate',
-  'astronaut',
-  'heeler_lifeguard',
-]);
 let installed = false;
 
 function stockPortraitAsset(
@@ -51,7 +42,6 @@ function replaceCardPortrait(
   scene: Phaser.Scene,
   card: Phaser.GameObjects.Container,
   definition: RuntimeCorgiDef,
-  phase: number,
 ): void {
   const currentPortrait = card.list.find((child) =>
     child instanceof Phaser.GameObjects.Image,
@@ -79,21 +69,20 @@ function replaceCardPortrait(
   if (definition.tint !== undefined) sprite.setTint(definition.tint);
   if (index >= 0) card.addAt(sprite, index);
   else card.add(sprite);
-
 }
 
-function animateVisibleStoreCards(scene: Phaser.Scene): void {
+function replaceVisibleStorePortraits(scene: Phaser.Scene): void {
   const definitions = CORGIS as unknown as RuntimeCorgiDef[];
   const cards = scene.children.list.filter((child) =>
     child instanceof Phaser.GameObjects.Container
     && cardCorgiId(child as Phaser.GameObjects.Container),
   ) as Phaser.GameObjects.Container[];
 
-  cards.forEach((card, index) => {
+  cards.forEach((card) => {
     const id = cardCorgiId(card);
     const definition = definitions.find((candidate) => candidate.id === id);
     if (!definition) return;
-    replaceCardPortrait(scene, card, definition, index / Math.max(1, cards.length));
+    replaceCardPortrait(scene, card, definition);
   });
 }
 
@@ -112,12 +101,12 @@ export function installStoreFullBodyFix(
   const selectPrototype = CorgiSelectSceneClass.prototype;
   const previousCreate = selectPrototype.create;
 
-  selectPrototype.create = function createAnimatedCorgiStore(
+  selectPrototype.create = function createStaticCorgiStore(
     this: Phaser.Scene & Record<string, any>,
     ...args: unknown[]
   ): unknown {
     const result = previousCreate.apply(this, args);
-    animateVisibleStoreCards(this);
+    replaceVisibleStorePortraits(this);
     return result;
   };
 }
