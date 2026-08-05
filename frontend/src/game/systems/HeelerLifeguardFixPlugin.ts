@@ -23,9 +23,8 @@ const RUN_ANIMATION_KEY = 'heeler_lifeguard_verified_run';
 const BASE_FRAME = 0;
 const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7];
 const ACTOR_DEPTH = 30;
-// All frames in the shipped atlas are 80×80. The dedicated airborne slots
-// (offsets 4–6) contain cropped drawings with missing legs, so Heeler uses
-// complete frames from the supplied eight-frame running sheet for every pose.
+// The supplied transparent sheet contains eight complete 384×512 running
+// frames. Airborne states reuse full-body frames from that same approved sheet.
 const FRAME_BASELINE = 1;
 const JUMP_FRAME_OFFSET = 1;
 const FALL_FRAME_OFFSET = 2;
@@ -121,10 +120,9 @@ function playRun(scene: Phaser.Scene & Record<string, any>): void {
 /**
  * First one-at-a-time premium-corgi repair.
  *
- * Heeler Lifeguard exclusively uses its own full-body atlas row for the store,
- * eight-frame running, jump, fall, and landing. This is installed after every
- * shared animation wrapper, so no global fallback can replace it with a still
- * portrait or move its visible paw baseline above the running path.
+ * Heeler Lifeguard uses the approved standing portrait in the store and the
+ * supplied eight-frame sheet in gameplay. Installed after every shared wrapper,
+ * this keeps old atlas fallbacks from replacing either dedicated asset.
  */
 export function installHeelerLifeguardFix(
   PreloadSceneClass: SceneClass,
@@ -142,8 +140,8 @@ export function installHeelerLifeguardFix(
     const result = previousPreloadCreate.apply(this, args);
     ready = false;
 
-    if (!this.textures.exists(ATLAS_KEY)) {
-      console.error('[Corgi Hop] Heeler Lifeguard gameplay atlas is unavailable.');
+    if (!this.textures.exists(STORE_TEXTURE_KEY) || !this.textures.exists(RUN_SHEET_KEY)) {
+      console.error('[Corgi Hop] Dedicated Heeler Lifeguard assets are unavailable.');
       return result;
     }
 
@@ -189,7 +187,7 @@ export function installHeelerLifeguardFix(
       return;
     }
 
-    this.runTexKey = ATLAS_KEY;
+    this.runTexKey = RUN_SHEET_KEY;
     this.runAnimKey = RUN_ANIMATION_KEY;
 
     if (pose === 'run') {
