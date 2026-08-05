@@ -71,6 +71,9 @@ function applyFullBodyStorePortraits(runtimeCorgis: RuntimeCorgiDef[]): void {
     const storeDef = NEW_CORGIS[frame];
     const runtimeDef = runtimeCorgis.find((corgi) => corgi.id === storeDef.id);
     if (!runtimeDef) continue;
+    // Heeler Lifeguard owns a dedicated stock standing portrait. Do not let
+    // the shared page-two sheet or gameplay animation replace it in the store.
+    if (runtimeDef.id === 'heeler_lifeguard') continue;
     runtimeDef.texture = STORE_PORTRAIT_SHEET;
     runtimeDef.textureFrame = frame;
   }
