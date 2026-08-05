@@ -17,16 +17,15 @@ interface RuntimeCorgiDef {
 }
 
 const CORGI_ID = 'heeler_lifeguard';
-const ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
+const STORE_TEXTURE_KEY = 'heeler_lifeguard_store';
+const RUN_SHEET_KEY = 'heeler_lifeguard_run_sheet';
 const RUN_ANIMATION_KEY = 'heeler_lifeguard_verified_run';
-const SOURCE_FRAMES_PER_CORGI = 7;
-const SOURCE_ROW = 11;
-const BASE_FRAME = SOURCE_ROW * SOURCE_FRAMES_PER_CORGI;
-const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 0, 1, 2, 3];
+const BASE_FRAME = 0;
+const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7];
 const ACTOR_DEPTH = 30;
 // All frames in the shipped atlas are 80×80. The dedicated airborne slots
 // (offsets 4–6) contain cropped drawings with missing legs, so Heeler uses
-// complete full-body frames from his own verified run cycle for every pose.
+// complete frames from the supplied eight-frame running sheet for every pose.
 const FRAME_BASELINE = 1;
 const JUMP_FRAME_OFFSET = 1;
 const FALL_FRAME_OFFSET = 2;
@@ -47,10 +46,10 @@ function configureDefinition(): void {
   const def = definition();
   if (!def) return;
 
-  def.texture = ATLAS_KEY;
+  def.texture = STORE_TEXTURE_KEY;
   def.textureFrame = BASE_FRAME;
   def.runFrame = BASE_FRAME;
-  def.runSheetKey = ATLAS_KEY;
+  def.runSheetKey = RUN_SHEET_KEY;
   def.runAnimKey = RUN_ANIMATION_KEY;
   def.jumpFrame = BASE_FRAME + JUMP_FRAME_OFFSET;
   def.fallFrame = BASE_FRAME + FALL_FRAME_OFFSET;
@@ -65,7 +64,7 @@ function registerAnimation(scene: Phaser.Scene): void {
   scene.anims.create({
     key: RUN_ANIMATION_KEY,
     frames: RUN_FRAME_OFFSETS.map((offset) => ({
-      key: ATLAS_KEY,
+      key: RUN_SHEET_KEY,
       frame: BASE_FRAME + offset,
     })),
     frameRate: 14,
@@ -78,20 +77,20 @@ function applyFrame(
   frame: number,
 ): Phaser.Physics.Arcade.Sprite | undefined {
   const corgi = scene.corgi as Phaser.Physics.Arcade.Sprite | undefined;
-  if (!corgi || !scene.textures.exists(ATLAS_KEY)) return undefined;
+  if (!corgi || !scene.textures.exists(RUN_SHEET_KEY)) return undefined;
 
   const alreadyShowing =
-    corgi.texture?.key === ATLAS_KEY
+    corgi.texture?.key === RUN_SHEET_KEY
     && String(corgi.frame?.name) === String(frame);
 
   if (!alreadyShowing) {
-    corgi.setTexture(ATLAS_KEY, frame);
+    corgi.setTexture(RUN_SHEET_KEY, frame);
     if (typeof scene.sizeCorgiUniform === 'function') {
       scene.sizeCorgiUniform();
     }
   }
 
-  // The gameplay atlas is 80×80. Bottom anchoring keeps the complete full-body
+  // The supplied gameplay frames are 384×512. Bottom anchoring keeps the complete full-body
   // frame on the physics baseline. A high final depth keeps the dog above
   // trees, bushes, path artwork, and foreground foliage.
   corgi.clearMask();
@@ -110,7 +109,7 @@ function playRun(scene: Phaser.Scene & Record<string, any>): void {
   const corgi = applyFrame(scene, BASE_FRAME);
   if (!corgi || !scene.anims.exists(RUN_ANIMATION_KEY)) return;
 
-  scene.runTexKey = ATLAS_KEY;
+  scene.runTexKey = RUN_SHEET_KEY;
   scene.runAnimKey = RUN_ANIMATION_KEY;
 
   const wrongAnimation = corgi.anims.currentAnim?.key !== RUN_ANIMATION_KEY;
