@@ -14,15 +14,24 @@ interface RuntimeCorgiDef {
 }
 
 const CARD_TEST_ID_PREFIX = 'select-corgi-';
+const STATIC_STOCK_STORE_IDS = new Set([
+  'classic',
+  'starter',
+  'cowboy',
+  'superhero',
+  'pirate',
+  'astronaut',
+  'heeler_lifeguard',
+]);
 let installed = false;
 
 function animatedAsset(
   scene: Phaser.Scene,
   definition: RuntimeCorgiDef,
 ): { texture: string; frame?: number; animation?: string } {
-  // Heeler's store artwork is intentionally a polished standing portrait.
-  // Never replace it with the low running pose used in live gameplay.
-  if (definition.id === 'heeler_lifeguard' && scene.textures.exists(definition.texture)) {
+  // Original characters and Heeler use their stock standing portraits in the
+  // store. Their run sheets are gameplay-only and must never animate on cards.
+  if (STATIC_STOCK_STORE_IDS.has(definition.id) && scene.textures.exists(definition.texture)) {
     return { texture: definition.texture, frame: definition.textureFrame };
   }
 
