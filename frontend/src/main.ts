@@ -62,7 +62,7 @@ function boot() {
   installPirateCorgiFix(GameScene, CorgiSelectScene);
   // Builds the shared eight-frame run cycles used by both store and gameplay.
   installGameplayAnimation(PreloadScene, GameScene);
-  // Store cards preview the exact same run sheets and animation keys as gameplay.
+  // Store cards use static stock portraits; running sheets stay gameplay-only.
   installStoreFullBodyFix(CorgiSelectScene, GameScene);
   // Bob and Lulu now stay on the shared gameplay-animation path.
   installBobLuluUpdate(PreloadScene, CorgiSelectScene, GameScene);
