@@ -24,7 +24,13 @@ const SOURCE_ROW = 11;
 const BASE_FRAME = SOURCE_ROW * SOURCE_FRAMES_PER_CORGI;
 const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 0, 1, 2, 3];
 const ACTOR_DEPTH = 30;
-const FRAME_BASELINE = 125 / 128;
+// All frames in the shipped atlas are 80×80. The dedicated airborne slots
+// (offsets 4–6) contain cropped drawings with missing legs, so Heeler uses
+// complete full-body frames from his own verified run cycle for every pose.
+const FRAME_BASELINE = 1;
+const JUMP_FRAME_OFFSET = 1;
+const FALL_FRAME_OFFSET = 2;
+const LAND_FRAME_OFFSET = 3;
 let installed = false;
 let ready = false;
 
@@ -46,9 +52,9 @@ function configureDefinition(): void {
   def.runFrame = BASE_FRAME;
   def.runSheetKey = ATLAS_KEY;
   def.runAnimKey = RUN_ANIMATION_KEY;
-  def.jumpFrame = BASE_FRAME + 4;
-  def.fallFrame = BASE_FRAME + 5;
-  def.landFrame = BASE_FRAME + 6;
+  def.jumpFrame = BASE_FRAME + JUMP_FRAME_OFFSET;
+  def.fallFrame = BASE_FRAME + FALL_FRAME_OFFSET;
+  def.landFrame = BASE_FRAME + LAND_FRAME_OFFSET;
 }
 
 function registerAnimation(scene: Phaser.Scene): void {
@@ -85,10 +91,9 @@ function applyFrame(
     }
   }
 
-  // The Heeler artwork's visible paw line sits at y=125 inside a 128px frame.
-  // Anchoring to that exact line keeps every paw on the path rather than
-  // floating above it. A high final depth keeps the complete dog above trees,
-  // bushes, the path, and foreground foliage.
+  // The gameplay atlas is 80×80. Bottom anchoring keeps the complete full-body
+  // frame on the physics baseline. A high final depth keeps the dog above
+  // trees, bushes, path artwork, and foreground foliage.
   corgi.clearMask();
   corgi.setOrigin(0.5, FRAME_BASELINE);
   corgi.setDepth(ACTOR_DEPTH);
@@ -197,10 +202,10 @@ export function installHeelerLifeguardFix(
     corgi?.anims.stop();
 
     const frame = pose === 'jump'
-      ? BASE_FRAME + 4
+      ? BASE_FRAME + JUMP_FRAME_OFFSET
       : pose === 'fall'
-        ? BASE_FRAME + 5
-        : BASE_FRAME + 6;
+        ? BASE_FRAME + FALL_FRAME_OFFSET
+        : BASE_FRAME + LAND_FRAME_OFFSET;
 
     applyFrame(this, frame);
   };
