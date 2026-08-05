@@ -87,9 +87,10 @@ function configureDefinitions(): void {
     ninja.runFrame = 0;
     ninja.runSheetKey = NINJA_SHEET_KEY;
     ninja.runAnimKey = NINJA_ANIMATION_KEY;
-    ninja.jumpFrame = 1;
-    ninja.fallFrame = 2;
-    ninja.landFrame = 3;
+    // Dedicated Ninja frames chosen for the clearest complete paws in air.
+    ninja.jumpFrame = 0;
+    ninja.fallFrame = 4;
+    ninja.landFrame = 5;
   }
 }
 
@@ -270,7 +271,14 @@ export function installGameplayAnimation(
     }
 
     corgi.anims.stop();
-    const frame = pose === 'jump' ? base + 1 : pose === 'fall' ? base + 2 : base + 3;
+    const jumpOffset = isNinja ? 0 : 1;
+    const fallOffset = isNinja ? 4 : 2;
+    const landOffset = isNinja ? 5 : 3;
+    const frame = pose === 'jump'
+      ? base + jumpOffset
+      : pose === 'fall'
+        ? base + fallOffset
+        : base + landOffset;
     applyFullBodyVisual(this, textureKey, frame);
   };
 }
