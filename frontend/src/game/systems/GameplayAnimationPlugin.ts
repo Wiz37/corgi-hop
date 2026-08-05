@@ -29,6 +29,9 @@ interface AtlasRow {
 
 const SOURCE_ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
 const SOURCE_FRAMES_PER_CORGI = 7;
+const NINJA_ID = 'red_tri_ninja';
+const NINJA_SHEET_KEY = 'red_tri_ninja_run_sheet';
+const NINJA_ANIMATION_KEY = 'red_tri_ninja_verified_run';
 const RUN_FRAME_COUNT = 8;
 const GAMEPLAY_ACTOR_DEPTH = 24;
 
@@ -72,9 +75,21 @@ function configureDefinitions(): void {
     definition.runFrame = base;
     definition.runSheetKey = SOURCE_ATLAS_KEY;
     definition.runAnimKey = row.runAnimKey;
-    definition.jumpFrame = base + 4;
-    definition.fallFrame = base + 5;
-    definition.landFrame = base + 6;
+    // The legacy airborne slots crop paws/feet. Reuse complete full-body run
+    // drawings for jump, fall, and landing so every newer corgi stays intact.
+    definition.jumpFrame = base + 1;
+    definition.fallFrame = base + 2;
+    definition.landFrame = base + 3;
+  }
+
+  const ninja = definitions.find((candidate) => candidate.id === NINJA_ID);
+  if (ninja) {
+    ninja.runFrame = 0;
+    ninja.runSheetKey = NINJA_SHEET_KEY;
+    ninja.runAnimKey = NINJA_ANIMATION_KEY;
+    ninja.jumpFrame = 1;
+    ninja.fallFrame = 2;
+    ninja.landFrame = 3;
   }
 }
 
@@ -85,6 +100,7 @@ function registerAnimations(scene: Phaser.Scene): void {
   const runOffsets = [0, 1, 2, 3, 0, 1, 2, 3];
 
   for (const row of ATLAS_ROWS) {
+    if (row.id === NINJA_ID) continue;
     if (scene.anims.exists(row.runAnimKey)) scene.anims.remove(row.runAnimKey);
 
     const base = sourceBase(row.sourceRow);
@@ -98,21 +114,33 @@ function registerAnimations(scene: Phaser.Scene): void {
       repeat: -1,
     });
   }
+
+  if (scene.anims.exists(NINJA_ANIMATION_KEY)) scene.anims.remove(NINJA_ANIMATION_KEY);
+  scene.anims.create({
+    key: NINJA_ANIMATION_KEY,
+    frames: Array.from({ length: RUN_FRAME_COUNT }, (_, frame) => ({
+      key: NINJA_SHEET_KEY,
+      frame,
+    })),
+    frameRate: 14,
+    repeat: -1,
+  });
 }
 
 function applyFullBodyVisual(
   scene: Phaser.Scene & Record<string, any>,
+  textureKey: string,
   frame: number,
 ): void {
   const corgi = scene.corgi as Phaser.Physics.Arcade.Sprite | undefined;
   if (!corgi) return;
 
   const alreadyShowing =
-    corgi.texture?.key === SOURCE_ATLAS_KEY
+    corgi.texture?.key === textureKey
     && String(corgi.frame?.name) === String(frame);
 
   if (!alreadyShowing) {
-    corgi.setTexture(SOURCE_ATLAS_KEY, frame);
+    corgi.setTexture(textureKey, frame);
     if (typeof scene.sizeCorgiUniform === 'function') scene.sizeCorgiUniform();
   }
 
@@ -149,6 +177,12 @@ export function installGameplayAnimation(
       startFrame: 0,
       endFrame: CORGI_GAMEPLAY_FRAME_COUNT - 1,
     });
+    this.load.spritesheet(NINJA_SHEET_KEY, '/assets/red_tri_ninja_run_sheet.png?v=20260805a', {
+      frameWidth: 300,
+      frameHeight: 200,
+      startFrame: 0,
+      endFrame: RUN_FRAME_COUNT - 1,
+    });
   };
 
   const previousPreloadCreate = preloadPrototype.create;
@@ -156,8 +190,8 @@ export function installGameplayAnimation(
     const result = previousPreloadCreate.call(this);
     atlasReady = false;
 
-    if (!this.textures.exists(SOURCE_ATLAS_KEY)) {
-      console.error('[Corgi Hop] Full-body gameplay atlas failed to load.');
+    if (!this.textures.exists(SOURCE_ATLAS_KEY) || !this.textures.exists(NINJA_SHEET_KEY)) {
+      console.error('[Corgi Hop] Full-body gameplay assets failed to load.');
       return result;
     }
 
@@ -187,13 +221,16 @@ export function installGameplayAnimation(
       return result;
     }
 
-    const base = sourceBase(row.sourceRow);
-    this.runTexKey = SOURCE_ATLAS_KEY;
-    this.runAnimKey = row.runAnimKey;
+    const isNinja = row.id === NINJA_ID;
+    const textureKey = isNinja ? NINJA_SHEET_KEY : SOURCE_ATLAS_KEY;
+    const animationKey = isNinja ? NINJA_ANIMATION_KEY : row.runAnimKey;
+    const base = isNinja ? 0 : sourceBase(row.sourceRow);
+    this.runTexKey = textureKey;
+    this.runAnimKey = animationKey;
 
     corgi.anims.stop();
-    applyFullBodyVisual(this, base);
-    if (this.anims.exists(row.runAnimKey)) corgi.play(row.runAnimKey, true);
+    applyFullBodyVisual(this, textureKey, base);
+    if (this.anims.exists(animationKey)) corgi.play(animationKey, true);
     return result;
   };
 
@@ -215,22 +252,25 @@ export function installGameplayAnimation(
       return;
     }
 
-    const base = sourceBase(row.sourceRow);
-    this.runTexKey = SOURCE_ATLAS_KEY;
-    this.runAnimKey = row.runAnimKey;
+    const isNinja = row.id === NINJA_ID;
+    const textureKey = isNinja ? NINJA_SHEET_KEY : SOURCE_ATLAS_KEY;
+    const animationKey = isNinja ? NINJA_ANIMATION_KEY : row.runAnimKey;
+    const base = isNinja ? 0 : sourceBase(row.sourceRow);
+    this.runTexKey = textureKey;
+    this.runAnimKey = animationKey;
 
     if (pose === 'run') {
-      applyFullBodyVisual(this, base);
-      const wrongAnimation = corgi.anims.currentAnim?.key !== row.runAnimKey;
-      if (this.anims.exists(row.runAnimKey)
+      applyFullBodyVisual(this, textureKey, base);
+      const wrongAnimation = corgi.anims.currentAnim?.key !== animationKey;
+      if (this.anims.exists(animationKey)
         && (!corgi.anims.isPlaying || wrongAnimation)) {
-        corgi.play(row.runAnimKey, true);
+        corgi.play(animationKey, true);
       }
       return;
     }
 
     corgi.anims.stop();
-    const frame = pose === 'jump' ? base + 4 : pose === 'fall' ? base + 5 : base + 6;
-    applyFullBodyVisual(this, frame);
+    const frame = pose === 'jump' ? base + 1 : pose === 'fall' ? base + 2 : base + 3;
+    applyFullBodyVisual(this, textureKey, frame);
   };
 }
