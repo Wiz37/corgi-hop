@@ -20,6 +20,12 @@ function animatedAsset(
   scene: Phaser.Scene,
   definition: RuntimeCorgiDef,
 ): { texture: string; frame?: number; animation?: string } {
+  // Heeler's store artwork is intentionally a polished standing portrait.
+  // Never replace it with the low running pose used in live gameplay.
+  if (definition.id === 'heeler_lifeguard' && scene.textures.exists(definition.texture)) {
+    return { texture: definition.texture, frame: definition.textureFrame };
+  }
+
   const runSheetKey = definition.runSheetKey;
   const runAnimKey = definition.runAnimKey;
 

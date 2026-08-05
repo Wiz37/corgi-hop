@@ -17,14 +17,18 @@ interface RuntimeCorgiDef {
 }
 
 const CORGI_ID = 'heeler_lifeguard';
-const ATLAS_KEY = 'corgi_gameplay_atlas_20260801';
+const STORE_TEXTURE_KEY = 'heeler_lifeguard_store';
+const RUN_SHEET_KEY = 'heeler_lifeguard_run_sheet';
 const RUN_ANIMATION_KEY = 'heeler_lifeguard_verified_run';
-const SOURCE_FRAMES_PER_CORGI = 7;
-const SOURCE_ROW = 11;
-const BASE_FRAME = SOURCE_ROW * SOURCE_FRAMES_PER_CORGI;
-const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 0, 1, 2, 3];
+const BASE_FRAME = 0;
+const RUN_FRAME_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7];
 const ACTOR_DEPTH = 30;
-const FRAME_BASELINE = 125 / 128;
+// The supplied transparent sheet contains eight complete 384×512 running
+// frames. Airborne states reuse full-body frames from that same approved sheet.
+const FRAME_BASELINE = 1;
+const JUMP_FRAME_OFFSET = 1;
+const FALL_FRAME_OFFSET = 2;
+const LAND_FRAME_OFFSET = 3;
 let installed = false;
 let ready = false;
 
@@ -41,14 +45,14 @@ function configureDefinition(): void {
   const def = definition();
   if (!def) return;
 
-  def.texture = ATLAS_KEY;
+  def.texture = STORE_TEXTURE_KEY;
   def.textureFrame = BASE_FRAME;
   def.runFrame = BASE_FRAME;
-  def.runSheetKey = ATLAS_KEY;
+  def.runSheetKey = RUN_SHEET_KEY;
   def.runAnimKey = RUN_ANIMATION_KEY;
-  def.jumpFrame = BASE_FRAME + 4;
-  def.fallFrame = BASE_FRAME + 5;
-  def.landFrame = BASE_FRAME + 6;
+  def.jumpFrame = BASE_FRAME + JUMP_FRAME_OFFSET;
+  def.fallFrame = BASE_FRAME + FALL_FRAME_OFFSET;
+  def.landFrame = BASE_FRAME + LAND_FRAME_OFFSET;
 }
 
 function registerAnimation(scene: Phaser.Scene): void {
@@ -59,7 +63,7 @@ function registerAnimation(scene: Phaser.Scene): void {
   scene.anims.create({
     key: RUN_ANIMATION_KEY,
     frames: RUN_FRAME_OFFSETS.map((offset) => ({
-      key: ATLAS_KEY,
+      key: RUN_SHEET_KEY,
       frame: BASE_FRAME + offset,
     })),
     frameRate: 14,
@@ -72,23 +76,22 @@ function applyFrame(
   frame: number,
 ): Phaser.Physics.Arcade.Sprite | undefined {
   const corgi = scene.corgi as Phaser.Physics.Arcade.Sprite | undefined;
-  if (!corgi || !scene.textures.exists(ATLAS_KEY)) return undefined;
+  if (!corgi || !scene.textures.exists(RUN_SHEET_KEY)) return undefined;
 
   const alreadyShowing =
-    corgi.texture?.key === ATLAS_KEY
+    corgi.texture?.key === RUN_SHEET_KEY
     && String(corgi.frame?.name) === String(frame);
 
   if (!alreadyShowing) {
-    corgi.setTexture(ATLAS_KEY, frame);
+    corgi.setTexture(RUN_SHEET_KEY, frame);
     if (typeof scene.sizeCorgiUniform === 'function') {
       scene.sizeCorgiUniform();
     }
   }
 
-  // The Heeler artwork's visible paw line sits at y=125 inside a 128px frame.
-  // Anchoring to that exact line keeps every paw on the path rather than
-  // floating above it. A high final depth keeps the complete dog above trees,
-  // bushes, the path, and foreground foliage.
+  // The supplied gameplay frames are 384×512. Bottom anchoring keeps the complete full-body
+  // frame on the physics baseline. A high final depth keeps the dog above
+  // trees, bushes, path artwork, and foreground foliage.
   corgi.clearMask();
   corgi.setOrigin(0.5, FRAME_BASELINE);
   corgi.setDepth(ACTOR_DEPTH);
@@ -105,7 +108,7 @@ function playRun(scene: Phaser.Scene & Record<string, any>): void {
   const corgi = applyFrame(scene, BASE_FRAME);
   if (!corgi || !scene.anims.exists(RUN_ANIMATION_KEY)) return;
 
-  scene.runTexKey = ATLAS_KEY;
+  scene.runTexKey = RUN_SHEET_KEY;
   scene.runAnimKey = RUN_ANIMATION_KEY;
 
   const wrongAnimation = corgi.anims.currentAnim?.key !== RUN_ANIMATION_KEY;
@@ -117,10 +120,9 @@ function playRun(scene: Phaser.Scene & Record<string, any>): void {
 /**
  * First one-at-a-time premium-corgi repair.
  *
- * Heeler Lifeguard exclusively uses its own full-body atlas row for the store,
- * eight-frame running, jump, fall, and landing. This is installed after every
- * shared animation wrapper, so no global fallback can replace it with a still
- * portrait or move its visible paw baseline above the running path.
+ * Heeler Lifeguard uses the approved standing portrait in the store and the
+ * supplied eight-frame sheet in gameplay. Installed after every shared wrapper,
+ * this keeps old atlas fallbacks from replacing either dedicated asset.
  */
 export function installHeelerLifeguardFix(
   PreloadSceneClass: SceneClass,
@@ -138,8 +140,8 @@ export function installHeelerLifeguardFix(
     const result = previousPreloadCreate.apply(this, args);
     ready = false;
 
-    if (!this.textures.exists(ATLAS_KEY)) {
-      console.error('[Corgi Hop] Heeler Lifeguard gameplay atlas is unavailable.');
+    if (!this.textures.exists(STORE_TEXTURE_KEY) || !this.textures.exists(RUN_SHEET_KEY)) {
+      console.error('[Corgi Hop] Dedicated Heeler Lifeguard assets are unavailable.');
       return result;
     }
 
@@ -185,7 +187,7 @@ export function installHeelerLifeguardFix(
       return;
     }
 
-    this.runTexKey = ATLAS_KEY;
+    this.runTexKey = RUN_SHEET_KEY;
     this.runAnimKey = RUN_ANIMATION_KEY;
 
     if (pose === 'run') {
@@ -197,10 +199,10 @@ export function installHeelerLifeguardFix(
     corgi?.anims.stop();
 
     const frame = pose === 'jump'
-      ? BASE_FRAME + 4
+      ? BASE_FRAME + JUMP_FRAME_OFFSET
       : pose === 'fall'
-        ? BASE_FRAME + 5
-        : BASE_FRAME + 6;
+        ? BASE_FRAME + FALL_FRAME_OFFSET
+        : BASE_FRAME + LAND_FRAME_OFFSET;
 
     applyFrame(this, frame);
   };
