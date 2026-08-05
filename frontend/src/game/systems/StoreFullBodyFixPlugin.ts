@@ -25,32 +25,12 @@ const STATIC_STOCK_STORE_IDS = new Set([
 ]);
 let installed = false;
 
-function animatedAsset(
+function stockPortraitAsset(
   scene: Phaser.Scene,
   definition: RuntimeCorgiDef,
-): { texture: string; frame?: number; animation?: string } {
-  // Original characters and Heeler use their stock standing portraits in the
-  // store. Their run sheets are gameplay-only and must never animate on cards.
-  if (STATIC_STOCK_STORE_IDS.has(definition.id) && scene.textures.exists(definition.texture)) {
-    return { texture: definition.texture, frame: definition.textureFrame };
-  }
-
-  const runSheetKey = definition.runSheetKey;
-  const runAnimKey = definition.runAnimKey;
-
-  if (
-    runSheetKey
-    && runAnimKey
-    && scene.textures.exists(runSheetKey)
-    && scene.anims.exists(runAnimKey)
-  ) {
-    return {
-      texture: runSheetKey,
-      frame: definition.runFrame ?? 0,
-      animation: runAnimKey,
-    };
-  }
-
+): { texture: string; frame?: number } {
+  // Character-select cards always use static stock portraits. Running sheets
+  // and animations are reserved exclusively for live gameplay.
   if (scene.textures.exists(definition.texture)) {
     return {
       texture: definition.texture,
@@ -78,7 +58,7 @@ function replaceCardPortrait(
   ) as Phaser.GameObjects.Image | undefined;
   if (!currentPortrait) return;
 
-  const asset = animatedAsset(scene, definition);
+  const asset = stockPortraitAsset(scene, definition);
   const index = card.getIndex(currentPortrait);
   const width = currentPortrait.displayWidth;
   const height = currentPortrait.displayHeight;
@@ -100,13 +80,6 @@ function replaceCardPortrait(
   if (index >= 0) card.addAt(sprite, index);
   else card.add(sprite);
 
-  if (asset.animation && scene.anims.exists(asset.animation)) {
-    sprite.play(asset.animation);
-    const animation = sprite.anims.currentAnim;
-    if (animation && animation.frames.length > 1) {
-      sprite.anims.setProgress(phase % 1);
-    }
-  }
 }
 
 function animateVisibleStoreCards(scene: Phaser.Scene): void {
@@ -125,13 +98,9 @@ function animateVisibleStoreCards(scene: Phaser.Scene): void {
 }
 
 /**
- * Uses each corgi's real gameplay run sheet and animation in the character
- * store. This keeps every card visually identical to the playable character,
- * gives all fourteen corgis their full eight-frame stride, and avoids the
- * optional portrait sheets that previously fell back to the Classic Corgi.
- *
- * Gameplay is intentionally untouched here. GameplayAnimationPlugin remains
- * the single owner of the newer corgis' run, jump, fall, and landing poses.
+ * Uses each corgi's dedicated static stock portrait on character-select cards.
+ * No store portrait plays a running animation; run sheets remain exclusively
+ * owned by gameplay. Gameplay behavior is intentionally untouched here.
  */
 export function installStoreFullBodyFix(
   CorgiSelectSceneClass: SceneClass,
