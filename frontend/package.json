@@ -11,7 +11,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "validate:hurdles": "node ./scripts/validate_hurdles.mjs",
-    "check": "yarn typecheck && yarn validate:hurdles && yarn build",
+    "quality": "yarn typecheck && yarn validate:hurdles && yarn build",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
