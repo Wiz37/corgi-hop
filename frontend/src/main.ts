@@ -5,6 +5,7 @@ import { MenuScene } from './game/scenes/MenuScene';
 import { GameScene } from './game/scenes/GameScene';
 import { installTripleTiming } from './game/systems/TripleTimingPlugin';
 import { installFunGameplay } from './game/systems/FunGameplayPlugin';
+import { installAchievementRewards } from './game/systems/AchievementRewardsPlugin';
 import { installObstacleVariety } from './game/systems/ObstacleVarietyPlugin';
 import { installKidObstacles } from './game/systems/KidObstaclePlugin';
 import { installHawkObstacle } from './game/systems/HawkObstaclePlugin';
@@ -70,6 +71,9 @@ function boot() {
   installKidSizeBoost(GameScene);
   // Fills empty obstacle groups so Bones appear in roughly 70% of groups.
   installFrequentBones(GameScene);
+  // Persistent badge rewards wrap the finished gameplay callbacks without
+  // changing jump physics or the validated hurdle-spacing rules.
+  installAchievementRewards(GameScene, MenuScene, GameOverScene);
   // Installed after the shared character systems so every corgi resumes the
   // eight-frame cycle when returning to its running state.
   installLiveEightFrameGameplay(GameScene);
