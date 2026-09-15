@@ -73,7 +73,7 @@ function boot() {
   installFrequentBones(GameScene);
   // Persistent badge rewards wrap the finished gameplay callbacks without
   // changing jump physics or the validated hurdle-spacing rules.
-  installAchievementRewards(GameScene);
+  installAchievementRewards(GameScene, MenuScene, GameOverScene);
   // Installed after the shared character systems so every corgi resumes the
   // eight-frame cycle when returning to its running state.
   installLiveEightFrameGameplay(GameScene);
