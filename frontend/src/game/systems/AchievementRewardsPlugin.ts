@@ -39,6 +39,52 @@ function checkRunMilestones(scene: any): void {
   if (gameState.totalTreatsEarned >= 500) rewardAchievement(scene, 'bone-hound');
 }
 
+function addBadgePill(scene: any, y: number, testId: string): void {
+  const x = Number(scene.scale?.gameSize?.width || 720) / 2;
+  const width = 250;
+  const height = 44;
+  const graphics = scene.add.graphics().setDepth(44);
+  graphics.fillStyle(0x24304a, 0.78);
+  graphics.fillRoundedRect(x - width / 2, y - height / 2, width, height, height / 2);
+  graphics.lineStyle(3, 0xffd23c, 0.95);
+  graphics.strokeRoundedRect(x - width / 2, y - height / 2, width, height, height / 2);
+  scene.add.text(x, y, `★ ${achievements.getProgressText()}`, {
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontSize: '20px',
+    fontStyle: '900',
+    color: '#ffffff',
+    stroke: '#24304a',
+    strokeThickness: 3,
+  }).setOrigin(0.5).setDepth(45).setData('testId', testId);
+}
+
+function installBadgeProgressUi(MenuSceneClass?: SceneClass, GameOverSceneClass?: SceneClass): void {
+  if (MenuSceneClass) {
+    const menuProto = MenuSceneClass.prototype as any;
+    const originalMenuCreate = menuProto.create;
+    if (typeof originalMenuCreate === 'function') {
+      menuProto.create = function createMenuWithBadgeProgress(...args: unknown[]) {
+        const result = originalMenuCreate.apply(this, args);
+        addBadgePill(this, 980, 'menu-badge-progress');
+        return result;
+      };
+    }
+  }
+
+  if (GameOverSceneClass) {
+    const gameOverProto = GameOverSceneClass.prototype as any;
+    const originalGameOverCreate = gameOverProto.create;
+    if (typeof originalGameOverCreate === 'function') {
+      gameOverProto.create = function createGameOverWithBadgeProgress(...args: unknown[]) {
+        const result = originalGameOverCreate.apply(this, args);
+        const height = Number(this.scale?.gameSize?.height || 1280);
+        addBadgePill(this, height / 2 + 18, 'gameover-badge-progress');
+        return result;
+      };
+    }
+  }
+}
+
 /**
  * Final progression pass for Corgi Hop.
  *
@@ -48,7 +94,11 @@ function checkRunMilestones(scene: any): void {
  * existing skill-feedback HUD so the game gets a longer-term chase without
  * destabilising the TestFlight balance.
  */
-export function installAchievementRewards(GameSceneClass: SceneClass): void {
+export function installAchievementRewards(
+  GameSceneClass: SceneClass,
+  MenuSceneClass?: SceneClass,
+  GameOverSceneClass?: SceneClass,
+): void {
   if (installed) return;
   installed = true;
 
@@ -71,4 +121,6 @@ export function installAchievementRewards(GameSceneClass: SceneClass): void {
       return result;
     };
   }
+
+  installBadgeProgressUi(MenuSceneClass, GameOverSceneClass);
 }
