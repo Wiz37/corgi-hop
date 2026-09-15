@@ -97,9 +97,9 @@ export const TIERS: DifficultyTier[] = [
     scoreMin: 15, scoreMax: 30, minReactionMs: 1125,
     heights: { min: 74, max: 104 }, widths: { min: 60, max: 86 },
     patterns: [
-      { kind: 'single', weight: 86 },
+      { kind: 'single', weight: 84 },
       { kind: 'single-tall', weight: 5 },
-      { kind: 'double-mid', weight: 9 },
+      { kind: 'double-mid', weight: 11 },
     ],
   },
   {
